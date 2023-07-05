@@ -6,13 +6,15 @@ import (
 	"crypto/cipher"
 	"encoding/hex"
 	"fmt"
-	"github.com/spf13/viper"
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/term"
+	"io/ioutil"
 	"log"
 	"os"
 	"strings"
 	"syscall"
+
+	"github.com/spf13/viper"
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 )
 
 type CMD struct {
@@ -76,52 +78,42 @@ func StringPrompt(label string) string {
 	return strings.TrimSpace(s)
 }
 
-func (cmd CMD) GetCredentialsFromFiles() bool {
-	viper.AddConfigPath(".")
-	viper.SetConfigName("key") // Register config file name (no extension)
-	viper.SetConfigType("yml") // Look for specific type
-	var err = viper.ReadInConfig()
-	//CheckError(err)
-	if err != nil {
-		return false
-	}
-	appCode = viper.GetString("helper.key")
-
-	viper.SetConfigName("helper") // Change file and reread contents.
-	err = viper.ReadInConfig()
-	CheckError(err)
+func (cmd CMD) GetCredentialsFromFiles() bool { //TODO: not working. Variables were empty where used.
 
 	cmd.username = passBall(viper.GetString("helper.username"))
 	cmd.password = passBall(viper.GetString("helper.password"))
-	//FSApplianceFQDN = viper.GetString("helper.url")
 	return true
 }
 
 // SSHConnect : Run command against a host, using
-func (cmd CMD) SSHConnect(command string, host string) error {
+func (cmd CMD) SSHConnect(command string, host string, password string, username string) error {
 	config := &ssh.ClientConfig{
-		User:            cmd.username,
+		User: username,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(password),
+		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
-	// A public key may be used to authenticate against the remote
-	// server by using an unencrypted PEM-encoded private key file.
-	if cmd.privatekey != "" {
-		// Create the Signer for this private key.
-		signer, err := ssh.ParsePrivateKey([]byte(cmd.privatekey))
-		if err != nil {
-			return fmt.Errorf("unable to parse private key: %v", err)
+	/*	// A public key may be used to authenticate against the remote
+		// server by using an unencrypted PEM-encoded private key file.
+		if cmd.privatekey != "" {
+			// Create the Signer for this private key.
+			signer, err := ssh.ParsePrivateKey([]byte(cmd.privatekey))
+			if err != nil {
+				return fmt.Errorf("unable to parse private key: %v", err)
+			}
+			config.Auth = []ssh.AuthMethod{
+				ssh.PublicKeys(signer),
+			}
+		} else {
+			config.Auth = []ssh.AuthMethod{
+				ssh.Password(cmd.password),
+			}
 		}
-		config.Auth = []ssh.AuthMethod{
-			ssh.PublicKeys(signer),
-		}
-	} else {
-		config.Auth = []ssh.AuthMethod{
-			ssh.Password(cmd.password),
-		}
-	}
-
+	*/
 	// Connect to the remote host
-	client, err := ssh.Dial("tcp", host, config)
+	// Requires defined port number
+	client, err := ssh.Dial("tcp", host+":22", config)
 	if err != nil {
 		return fmt.Errorf("Failed to dial - unable to connect: %s", err)
 	}
@@ -133,22 +125,44 @@ func (cmd CMD) SSHConnect(command string, host string) error {
 		return fmt.Errorf("Failed to create session: %s", err)
 	}
 	defer session.Close()
-	err = session.Run(fmt.Sprintf(`%s`, command))
+	out, err := session.StdoutPipe()
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = session.Run(command)
 	if err != nil {
 		return err
 	}
+	value, err := ioutil.ReadAll(out)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Print(string(value))
+
 	return nil
 }
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	var command CMD
-	if !command.GetCredentialsFromFiles() {
-		fmt.Println("Unable to read credentials from file.")
-		command.username = StringPrompt("Username:")
-		command.password = StringPrompt("Password:")
-	}
-	err := command.SSHConnect("hostname && cat /etc/os-release", "10.9.0.10")
+	var deviceIP, userScript string
+	viper.AddConfigPath(".")
+	viper.SetConfigName("key") // Register config file name (no extension)
+	viper.SetConfigType("yml") // Look for specific type
+	var err = viper.ReadInConfig()
+	CheckError(err)
+	appCode = viper.GetString("helper.key")
+
+	viper.SetConfigName("helper") // Change file and reread contents.
+	err = viper.ReadInConfig()
+	CheckError(err)
+
+	fmt.Print("Device IP to connect: ")
+	fmt.Scan(&deviceIP)
+
+	fmt.Print("Command to run: ")
+	fmt.Scan(&userScript)
+	err = command.SSHConnect(userScript, deviceIP, passBall(viper.GetString("helper.password")), passBall(viper.GetString("helper.username")))
 	if err != nil {
 		log.Println(err)
 	}
