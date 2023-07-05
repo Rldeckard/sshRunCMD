@@ -79,6 +79,30 @@ func StringPrompt(label string) string {
 	return strings.TrimSpace(s)
 }
 
+func promptList(promptString string) []string {
+	fmt.Println(promptString)
+	scanner := bufio.NewScanner(os.Stdin)
+
+	var lines []string
+	for {
+		scanner.Scan()
+		line := scanner.Text()
+
+		// break the loop if line is empty
+		if len(line) == 0 {
+			break
+		}
+		lines = append(lines, line)
+	}
+
+	err := scanner.Err()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return lines
+}
+
 // GetCredentialsFromFiles : reads username and password from config files and defines them inside the CMD type.
 func (cmd *CMD) GetCredentialsFromFiles() bool {
 	viper.AddConfigPath(".")
@@ -98,7 +122,7 @@ func (cmd *CMD) GetCredentialsFromFiles() bool {
 }
 
 // SSHConnect : Run command against a host, using
-func (cmd *CMD) SSHConnect(command string, host string) error {
+func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 	config := &ssh.ClientConfig{
 		User:            cmd.username,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
@@ -138,9 +162,11 @@ func (cmd *CMD) SSHConnect(command string, host string) error {
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = session.Run(command)
-	if err != nil {
-		return err
+	for _, command := range userScript {
+		err = session.Run(command)
+		if err != nil {
+			return err
+		}
 	}
 	value, err := io.ReadAll(out)
 	if err != nil {
@@ -154,17 +180,16 @@ func (cmd *CMD) SSHConnect(command string, host string) error {
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	var command CMD
-	var deviceIP, userScript string
 	command.GetCredentialsFromFiles()
 
-	fmt.Print("Device IP to connect: ")
-	fmt.Scan(&deviceIP)
+	deviceList := promptList("Enter Device List:")
+	userScript := promptList("Enter commands to run:")
 
-	fmt.Print("Command to run: ")
-	fmt.Scan(&userScript)
-	err := command.SSHConnect(userScript, deviceIP)
-	if err != nil {
-		log.Println(err)
+	for _, deviceIP := range deviceList {
+		err := command.SSHConnect(userScript, deviceIP)
+		if err != nil {
+			log.Println(err)
+		}
 	}
 
 }
