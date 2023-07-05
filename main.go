@@ -6,7 +6,7 @@ import (
 	"crypto/cipher"
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -142,7 +142,7 @@ func (cmd *CMD) SSHConnect(command string, host string) error {
 	if err != nil {
 		return err
 	}
-	value, err := ioutil.ReadAll(out)
+	value, err := io.ReadAll(out)
 	if err != nil {
 		log.Fatal(err)
 	}
