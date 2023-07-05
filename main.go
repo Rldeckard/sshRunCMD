@@ -30,7 +30,7 @@ type CMD struct {
 //	key: 'fasdfasdfasdfasdf'
 var appCode string
 
-// This function is used to pass encrypted credentials.
+// passBall : This function is used to pass encrypted credentials.
 // Don't forget to update the appCode with a new 32 bit string per application.
 func passBall(ct string) string {
 	var plaintext []byte
@@ -57,6 +57,7 @@ func CheckError(err error) {
 	}
 }
 
+// StringPrompt : Prompts for user input, and securely prompts for password if "Password:" is the given label.
 func StringPrompt(label string) string {
 	var s string
 	r := bufio.NewReader(os.Stdin)
@@ -78,6 +79,7 @@ func StringPrompt(label string) string {
 	return strings.TrimSpace(s)
 }
 
+// GetCredentialsFromFiles : reads username and password from config files and defines them inside the CMD type.
 func (cmd *CMD) GetCredentialsFromFiles() bool {
 	viper.AddConfigPath(".")
 	viper.SetConfigName("key") // Register config file name (no extension)
