@@ -78,7 +78,17 @@ func StringPrompt(label string) string {
 	return strings.TrimSpace(s)
 }
 
-func (cmd CMD) GetCredentialsFromFiles() bool { //TODO: not working. Variables were empty where used.
+func (cmd *CMD) GetCredentialsFromFiles() bool {
+	viper.AddConfigPath(".")
+	viper.SetConfigName("key") // Register config file name (no extension)
+	viper.SetConfigType("yml") // Look for specific type
+	var err = viper.ReadInConfig()
+	CheckError(err)
+	appCode = viper.GetString("helper.key")
+
+	viper.SetConfigName("helper") // Change file and reread contents.
+	err = viper.ReadInConfig()
+	CheckError(err)
 
 	cmd.username = passBall(viper.GetString("helper.username"))
 	cmd.password = passBall(viper.GetString("helper.password"))
@@ -86,31 +96,28 @@ func (cmd CMD) GetCredentialsFromFiles() bool { //TODO: not working. Variables w
 }
 
 // SSHConnect : Run command against a host, using
-func (cmd CMD) SSHConnect(command string, host string, password string, username string) error {
+func (cmd *CMD) SSHConnect(command string, host string) error {
 	config := &ssh.ClientConfig{
-		User: username,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(password),
-		},
+		User:            cmd.username,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
-	/*	// A public key may be used to authenticate against the remote
-		// server by using an unencrypted PEM-encoded private key file.
-		if cmd.privatekey != "" {
-			// Create the Signer for this private key.
-			signer, err := ssh.ParsePrivateKey([]byte(cmd.privatekey))
-			if err != nil {
-				return fmt.Errorf("unable to parse private key: %v", err)
-			}
-			config.Auth = []ssh.AuthMethod{
-				ssh.PublicKeys(signer),
-			}
-		} else {
-			config.Auth = []ssh.AuthMethod{
-				ssh.Password(cmd.password),
-			}
+	// A public key may be used to authenticate against the remote
+	// server by using an unencrypted PEM-encoded private key file.
+	if cmd.privatekey != "" {
+		// Create the Signer for this private key.
+		signer, err := ssh.ParsePrivateKey([]byte(cmd.privatekey))
+		if err != nil {
+			return fmt.Errorf("unable to parse private key: %v", err)
 		}
-	*/
+		config.Auth = []ssh.AuthMethod{
+			ssh.PublicKeys(signer),
+		}
+	} else {
+		config.Auth = []ssh.AuthMethod{
+			ssh.Password(cmd.password),
+		}
+	}
+
 	// Connect to the remote host
 	// Requires defined port number
 	client, err := ssh.Dial("tcp", host+":22", config)
@@ -146,23 +153,14 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	var command CMD
 	var deviceIP, userScript string
-	viper.AddConfigPath(".")
-	viper.SetConfigName("key") // Register config file name (no extension)
-	viper.SetConfigType("yml") // Look for specific type
-	var err = viper.ReadInConfig()
-	CheckError(err)
-	appCode = viper.GetString("helper.key")
-
-	viper.SetConfigName("helper") // Change file and reread contents.
-	err = viper.ReadInConfig()
-	CheckError(err)
+	command.GetCredentialsFromFiles()
 
 	fmt.Print("Device IP to connect: ")
 	fmt.Scan(&deviceIP)
 
 	fmt.Print("Command to run: ")
 	fmt.Scan(&userScript)
-	err = command.SSHConnect(userScript, deviceIP, passBall(viper.GetString("helper.password")), passBall(viper.GetString("helper.username")))
+	err := command.SSHConnect(userScript, deviceIP)
 	if err != nil {
 		log.Println(err)
 	}
