@@ -187,7 +187,7 @@ func (cmd *CMD) SSHConnect(userScript []string, host string, config *ssh.ClientC
 		}
 		outputArray := strings.Split(stdoutBuf.String(), "\n")
 		outputLastLine := strings.Trim(outputArray[len(outputArray)-1], " ")
-		if len(outputLastLine) > 1 && outputLastLine[len(outputLastLine)-1:] == "#" {
+		if len(outputLastLine) > 1 && strings.HasSuffix(outputLastLine, "#") {
 			fmt.Println(stdoutBuf.String())
 			break
 		}
