@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-ping/ping"
 	"github.com/spf13/viper"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
@@ -131,14 +132,27 @@ func (cmd *CMD) GetCredentialsFromFiles() bool {
 
 // SSHConnect : Run command against a host
 func (cmd *CMD) SSHConnect(userScript []string, host string, config *ssh.ClientConfig) error {
-
+	pinger, err := ping.NewPinger(host)
+	if err != nil {
+		fmt.Errorf("Pings not working: %s", err)
+	}
+	pinger.Count = viper.GetInt("blockTimer.pingCount")
+	fmt.Println(pinger.Count)
+	pinger.SetPrivileged(true)
+	pinger.Timeout = time.Duration(viper.GetInt("blockTimer.pingTimeout")) * time.Millisecond //times out after 500 milliseconds
+	pinger.Run()                                                                              // blocks until finished
+	stats := pinger.Statistics()                                                              // get send/receive/rtt stats
+	if stats.PacketsRecv == 0 {
+		//Device Timed out. No need to make a list of available iPs. Exit function.
+		return fmt.Errorf("%s - Unable to connect: Device Offline.", host)
+	}
 	// Connect to the remote host
 	// Requires defined port number
 	client, err := ssh.Dial("tcp", host+":22", config)
 	if err != nil {
 		//Confusing erorrs. If it's exhausted all authentication methods it's probably a bad password.
 		if strings.Contains(err.Error(), "unable to authenticate, attempted methods [none password]") {
-			return fmt.Errorf("%s - Unable to connect: Authentication Failed", host)
+			return fmt.Errorf("%s - Unable to connect: Authentication Failed.", host)
 		}
 		if strings.Contains(err.Error(),
 			`connectex: A connection attempt failed because the connected party did not properly respond after a period of time`) ||
