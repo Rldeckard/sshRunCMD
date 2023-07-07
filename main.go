@@ -94,7 +94,6 @@ func promptList(promptString string) []string {
 
 		// break the loop if line is empty
 		if len(line) == 0 {
-			fmt.Println("Received input, processing...")
 			break
 		}
 		lines = append(lines, line)
@@ -139,9 +138,14 @@ func (cmd *CMD) SSHConnect(userScript []string, host string, config *ssh.ClientC
 	if err != nil {
 		//Confusing erorrs. If it's exhausted all authentication methods it's probably a bad password.
 		if strings.Contains(err.Error(), "unable to authenticate, attempted methods [none password]") {
-			return fmt.Errorf("Unable to connect: Authentication Failed")
+			return fmt.Errorf("%s - Unable to connect: Authentication Failed", host)
 		}
-		return fmt.Errorf("Unable to connect: %s\n", err)
+		if strings.Contains(err.Error(),
+			`connectex: A connection attempt failed because the connected party did not properly respond after a period of time`) ||
+			strings.Contains(err.Error(), `i/o timeout`) {
+			return fmt.Errorf("%s - Unable to connect: SSH attempt Timed Out.", host)
+		}
+		return fmt.Errorf("%s - Unable to connect: %s\n", host, err)
 	}
 	defer client.Close()
 
@@ -191,11 +195,12 @@ func (cmd *CMD) SSHConnect(userScript []string, host string, config *ssh.ClientC
 		outputArray := strings.Split(stdoutBuf.String(), "\n")
 		outputLastLine := strings.TrimSpace(outputArray[len(outputArray)-1])
 		if strings.HasSuffix(outputLastLine, "#") {
-			fmt.Println(stdoutBuf.String())
+			fmt.Printf("\n#####################  %s  ######################\n \n\n %s\n",
+				host, strings.TrimSpace(stdoutBuf.String()))
 			break
 		}
 		if i == 20 {
-			log.Println("No output received from Switch in alloted time.")
+			log.Printf("%s - No output received. Timed Out.", host)
 		}
 	}
 	return nil
@@ -213,7 +218,7 @@ func SetupCloseHandler() {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-		fmt.Println("\r- Ctrl+C pressed in Terminal. Gracefully shutting down.")
+		fmt.Println("\n- Ctrl+C pressed in Terminal. Gracefully shutting down.")
 		os.Exit(1)
 	}()
 	return
@@ -237,6 +242,8 @@ func main() {
 	config := &ssh.ClientConfig{
 		User:            command.username,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		//Might need to play with this. Default timeout is something insane like 10 seconds. I thought the program froze.
+		Timeout: 1 * time.Second,
 		/*
 			//not needed currently, but good code to keep
 			Config: ssh.Config{
@@ -264,10 +271,11 @@ func main() {
 	deviceList := promptList("Enter Device List, Press Enter when completed.")
 	userScript := promptList("Enter commands to run, Press Enter when completed.")
 
+	fmt.Println("Received input, processing...")
 	for _, deviceIP := range deviceList {
 		waitGroup.Add(1)
 		go func() {
-			defer waitGroup.Done() //blocks until all go routines are done.
+			defer waitGroup.Done() //blocks until each go routines are done.
 			err := command.SSHConnect(userScript, deviceIP, config)
 			if err != nil {
 				log.Print(err)
@@ -277,9 +285,11 @@ func main() {
 			time.Sleep(time.Duration(50) * time.Millisecond)
 			count = 0
 		}
-		time.Sleep(5)
+		//Keeps the output buffer from crossing streams in the go routine.
+		time.Sleep(1 * time.Millisecond)
 		count++
 	}
+	//blocks until ALL go routines are done.
 	waitGroup.Wait()
 
 }
