@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
 	"syscall"
@@ -81,6 +82,7 @@ func StringPrompt(label string) string {
 	return strings.TrimSpace(s)
 }
 
+// promptList : Prompt for user input and return array of string. Each line is its own string.
 func promptList(promptString string) []string {
 	fmt.Println("\n" + promptString)
 	scanner := bufio.NewScanner(os.Stdin)
@@ -92,6 +94,7 @@ func promptList(promptString string) []string {
 
 		// break the loop if line is empty
 		if len(line) == 0 {
+			fmt.Println("Received input, processing...")
 			break
 		}
 		lines = append(lines, line)
@@ -127,7 +130,7 @@ func (cmd *CMD) GetCredentialsFromFiles() bool {
 	return true
 }
 
-// SSHConnect : Run command against a host, using
+// SSHConnect : Run command against a host
 func (cmd *CMD) SSHConnect(userScript []string, host string, config *ssh.ClientConfig) error {
 
 	// Connect to the remote host
@@ -186,30 +189,47 @@ func (cmd *CMD) SSHConnect(userScript []string, host string, config *ssh.ClientC
 			time.Sleep(time.Duration(25 * time.Millisecond))
 		}
 		outputArray := strings.Split(stdoutBuf.String(), "\n")
-		outputLastLine := strings.Trim(outputArray[len(outputArray)-1], " ")
-		if len(outputLastLine) > 1 && strings.HasSuffix(outputLastLine, "#") {
+		outputLastLine := strings.TrimSpace(outputArray[len(outputArray)-1])
+		if strings.HasSuffix(outputLastLine, "#") {
 			fmt.Println(stdoutBuf.String())
 			break
 		}
 		if i == 20 {
-			fmt.Println("No output received from Switch in alloted time.")
+			log.Println("No output received from Switch in alloted time.")
 		}
 	}
 	return nil
 }
 
+// getLastLine : Fetch Last line of string
 func getLastLine(input string) string {
 	results := strings.Split(input, "\n")
 	return results[len(results)-1]
 }
 
+// SetupCloseHandler : Catch ^C and gracefully shutdown.
+func SetupCloseHandler() {
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		fmt.Println("\r- Ctrl+C pressed in Terminal. Gracefully shutting down.")
+		os.Exit(1)
+	}()
+	return
+}
+
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile) //TODO: what is this?
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	// This sets certain flags for the "log" package, so when a log.Println
+	// or other sub-function is run, makes a traceback. Similar to log.Panic, but does it for every log function.
+	// The log package contains many of the same functions as fmt.
+	SetupCloseHandler()
 	var command CMD
 	var count int
 	var waitGroup sync.WaitGroup
 	if !command.GetCredentialsFromFiles() {
-		fmt.Println("Unable to read credentials from file.")
+		log.Println("Unable to read credentials from file.")
 		command.username = StringPrompt("Username:")
 		command.password = StringPrompt("Password:")
 	}
@@ -230,7 +250,7 @@ func main() {
 		// Create the Signer for this private key.
 		signer, err := ssh.ParsePrivateKey([]byte(command.privatekey))
 		if err != nil {
-			fmt.Errorf("unable to parse private key: %v", err)
+			log.Printf("unable to parse private key: %v", err)
 		}
 		config.Auth = []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
@@ -242,7 +262,7 @@ func main() {
 	}
 
 	deviceList := promptList("Enter Device List, Press Enter when completed.")
-	userScript := promptList("Enter commands to run, Press enter when completed.")
+	userScript := promptList("Enter commands to run, Press Enter when completed.")
 
 	for _, deviceIP := range deviceList {
 		waitGroup.Add(1)
@@ -250,7 +270,7 @@ func main() {
 			defer waitGroup.Done() //blocks until all go routines are done.
 			err := command.SSHConnect(userScript, deviceIP, config)
 			if err != nil {
-				fmt.Print(err)
+				log.Print(err)
 			}
 		}()
 		if count > 200 { //only allows 200 routines at once. TODO: Needs replaced with real logic at some point to manage ssh connections.
