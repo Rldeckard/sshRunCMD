@@ -124,7 +124,6 @@ func (cmd *CMD) GetCredentialsFromFiles() bool {
 	if err != nil {
 		return false
 	}
-
 	cmd.username = passBall(viper.GetString("helper.username"))
 	cmd.password = passBall(viper.GetString("helper.password"))
 	return true
@@ -137,7 +136,6 @@ func (cmd *CMD) SSHConnect(userScript []string, host string, config *ssh.ClientC
 		fmt.Errorf("Pings not working: %s", err)
 	}
 	pinger.Count = viper.GetInt("blockTimer.pingCount")
-	fmt.Println(pinger.Count)
 	pinger.SetPrivileged(true)
 	pinger.Timeout = time.Duration(viper.GetInt("blockTimer.pingTimeout")) * time.Millisecond //times out after 500 milliseconds
 	pinger.Run()                                                                              // blocks until finished
@@ -199,21 +197,24 @@ func (cmd *CMD) SSHConnect(userScript []string, host string, config *ssh.ClientC
 	// Not that you can't send more commands immediately.
 	stdinBuf.Write([]byte(command + "\n"))
 	// Then you'll want to wait for the response, and watch the stdout buffer for output.
-
-	for i := 1; i <= 20; i++ {
+	upperLimit := 30
+	for i := 1; i <= upperLimit; i++ {
 		if i > 10 {
 			time.Sleep(time.Duration(100 * time.Millisecond))
 		} else {
-			time.Sleep(time.Duration(25 * time.Millisecond))
+			time.Sleep(time.Duration(40 * time.Millisecond))
 		}
-		outputArray := strings.Split(stdoutBuf.String(), "\n")
+
+		outputArray := strings.Split(strings.TrimSpace(stdoutBuf.String()), "\n")
 		outputLastLine := strings.TrimSpace(outputArray[len(outputArray)-1])
-		if strings.HasSuffix(outputLastLine, "#") {
-			fmt.Printf("\n#####################  %s  ######################\n \n\n %s\n",
-				host, strings.TrimSpace(stdoutBuf.String()))
+		outputArray = removeBanner(outputArray)
+
+		if len(outputArray) >= 3 && strings.HasSuffix(outputLastLine, "#") {
+			fmt.Printf("\n#####################  %s  #####################\n \n\n %s\n",
+				host, strings.TrimSpace(strings.Join(outputArray, "\n")))
 			break
 		}
-		if i == 20 {
+		if i == upperLimit {
 			log.Printf("%s - No output received. Timed Out.", host)
 		}
 	}
@@ -224,6 +225,22 @@ func (cmd *CMD) SSHConnect(userScript []string, host string, config *ssh.ClientC
 func getLastLine(input string) string {
 	results := strings.Split(input, "\n")
 	return results[len(results)-1]
+}
+
+// removes the banners from the output array to make the code easier to digest.
+func removeBanner(input []string) []string { //TODO: Add this as a CLI flag to add banners back.
+	for index, bannerString := range input {
+		if strings.Contains(bannerString, "-------------------------------") {
+			input[index-1] = ""
+			input[index] = ""
+			input[index+1] = ""
+		}
+		if index > 7 { //banners only exist at the beginning. Also accounts for 2 banners
+			break
+		}
+	}
+	return input
+
 }
 
 // SetupCloseHandler : Catch ^C and gracefully shutdown.
