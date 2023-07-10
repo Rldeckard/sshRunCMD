@@ -335,9 +335,9 @@ func main() {
 	waitGroup := goccm.New(200)
 	for _, deviceIP := range deviceList {
 		waitGroup.Wait()
-		go func(deviceIP string) {
+		go func(host string) {
 			defer waitGroup.Done()
-			err := command.SSHConnect(userScript, deviceIP, config)
+			err := command.SSHConnect(userScript, host, config)
 			if err != nil {
 				log.Print(err)
 			}
