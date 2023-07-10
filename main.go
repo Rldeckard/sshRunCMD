@@ -11,12 +11,13 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
 	"github.com/go-ping/ping"
 	"github.com/spf13/viper"
+	"github.com/zenthangplus/goccm"
+
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 )
@@ -292,8 +293,6 @@ func main() {
 	// The log package contains many of the same functions as fmt.
 	SetupCloseHandler()
 	var command CMD
-	var count int
-	var waitGroup sync.WaitGroup
 	if !command.GetCredentialsFromFiles() {
 		log.Println("Unable to read credentials from file.")
 		command.username = StringPrompt("Username:")
@@ -333,24 +332,21 @@ func main() {
 	userScript := promptList("Enter commands to run, Press Enter when completed.")
 
 	fmt.Println("Received input, processing...")
+	waitGroup := goccm.New(200)
 	for _, deviceIP := range deviceList {
-		waitGroup.Add(1)
-		go func() {
-			defer waitGroup.Done() //blocks until each go routines are done.
+		waitGroup.Wait()
+		go func(deviceIP string) {
+			defer waitGroup.Done()
 			err := command.SSHConnect(userScript, deviceIP, config)
 			if err != nil {
 				log.Print(err)
 			}
-		}()
-		if count > 200 { //only allows 200 routines at once. TODO: Needs replaced with real logic at some point to manage ssh connections.
-			time.Sleep(time.Duration(50) * time.Millisecond)
-			count = 0
-		}
+		}(deviceIP)
 		//Keeps the output buffer from crossing streams in the go routine.
-		time.Sleep(10 * time.Millisecond)
-		count++
+		time.Sleep(1 * time.Millisecond)
 	}
+
 	//blocks until ALL go routines are done.
-	waitGroup.Wait()
+	waitGroup.WaitAllDone()
 
 }
