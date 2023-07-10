@@ -6,6 +6,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -23,11 +24,11 @@ import (
 )
 
 type CMD struct {
-	username   string
-	useralt    string
-	password   string
-	passalt    string
-	privatekey string
+	username     string
+	password     string
+	fallbackUser string
+	fallbackPass string
+	privatekey   string
 }
 
 // encryption key used to decrypt helper.yml
@@ -40,6 +41,9 @@ var appCode string
 // passBall : This function is used to pass encrypted credentials.
 // Don't forget to update the appCode with a new 32 bit string per application.
 func passBall(ct string) string {
+	if ct == "" { //basically a catch for not providing alternate credentials
+		return ""
+	}
 	var plaintext []byte
 	ciphertext, _ := hex.DecodeString(ct)
 	c, err := aes.NewCipher([]byte(appCode))
@@ -123,6 +127,7 @@ func (cmd *CMD) GetCredentialsFromFiles() bool {
 	viper.SetConfigType("yml") // Look for specific type
 	var err = viper.ReadInConfig()
 	if err != nil {
+		log.Println(err)
 		return false
 	}
 	appCode = viper.GetString("helper.key")
@@ -130,17 +135,46 @@ func (cmd *CMD) GetCredentialsFromFiles() bool {
 	viper.SetConfigName("helper") // Change file and reread contents.
 	err = viper.ReadInConfig()
 	if err != nil {
+		log.Println(err)
 		return false
 	}
 	cmd.username = passBall(viper.GetString("helper.username"))
-	cmd.useralt = passBall(viper.GetString("helper.useralt"))
 	cmd.password = passBall(viper.GetString("helper.password"))
-	cmd.passalt = passBall(viper.GetString("helper.passalt"))
+	cmd.fallbackUser = passBall(viper.GetString("helper.fallbackUser"))
+	cmd.fallbackPass = passBall(viper.GetString("helper.fallbackPass"))
 	return true
 }
 
 // SSHConnect : Run command against a host
-func (cmd *CMD) SSHConnect(userScript []string, host string, config *ssh.ClientConfig) error {
+func (cmd *CMD) SSHConnect(userScript []string, host string) error {
+	config := &ssh.ClientConfig{
+		User:            cmd.username,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		//Might need to play with this. Default timeout is something insane like 10 seconds. I thought the program froze.
+		Timeout: 1 * time.Second,
+		/*
+			//not needed currently, but good code to keep
+			Config: ssh.Config{
+				Ciphers: []string{"aes128-ctr", "hmac-sha2-256"},
+			},
+		*/
+	}
+	// A public key may be used to authenticate against the remote
+	// server by using an unencrypted PEM-encoded private key file.
+	if cmd.privatekey != "" {
+		// Create the Signer for this private key.
+		signer, err := ssh.ParsePrivateKey([]byte(cmd.privatekey))
+		if err != nil {
+			log.Printf("unable to parse private key: %v", err)
+		}
+		config.Auth = []ssh.AuthMethod{
+			ssh.PublicKeys(signer),
+		}
+	} else {
+		config.Auth = []ssh.AuthMethod{
+			ssh.Password(cmd.password),
+		}
+	}
 	pinger, err := ping.NewPinger(host)
 	if err != nil {
 		fmt.Errorf("Pings not working: %s", err)
@@ -168,15 +202,11 @@ func (cmd *CMD) SSHConnect(userScript []string, host string, config *ssh.ClientC
 			}
 			//Confusing errors. If it's exhausted all authentication methods it's probably a bad password.
 			if strings.Contains(err.Error(), "unable to authenticate, attempted methods [none password]") {
-				if cmd.useralt != "" && i == 0 {
+				if cmd.fallbackUser != "" && i == 0 {
 					log.Printf("%s - Unable to connect: Trying Alternate Credentials.", host)
-					config = &ssh.ClientConfig{
-						User:            cmd.useralt,
-						HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-						Timeout:         1 * time.Second,
-						Auth: []ssh.AuthMethod{
-							ssh.Password(cmd.passalt),
-						},
+					config.User = cmd.fallbackUser
+					config.Auth = []ssh.AuthMethod{
+						ssh.Password(cmd.fallbackPass),
 					}
 
 				} else {
@@ -231,13 +261,14 @@ func (cmd *CMD) SSHConnect(userScript []string, host string, config *ssh.ClientC
 		if i > 10 {
 			time.Sleep(time.Duration(100 * time.Millisecond))
 		} else {
-			time.Sleep(time.Duration(40 * time.Millisecond))
+			time.Sleep(time.Duration(25) * time.Millisecond))
 		}
 
 		outputArray := strings.Split(strings.TrimSpace(stdoutBuf.String()), "\n")
-
 		outputLastLine := strings.TrimSpace(outputArray[len(outputArray)-1])
-		outputArray = removeBanner(outputArray)
+		if *originalOutput == false {
+			outputArray = removeBanner(outputArray)
+		}
 
 		if len(outputArray) >= 3 && strings.HasSuffix(outputLastLine, "#") {
 			outputArray[1] = ""
@@ -267,6 +298,7 @@ func removeBanner(input []string) []string { //TODO: Add this as a CLI flag to a
 			input[index+1] = ""
 		}
 		if strings.Contains(bannerString, "terminal length") {
+			fmt.Print(input[index])
 			input[index] = ""
 		}
 	}
@@ -286,58 +318,41 @@ func SetupCloseHandler() {
 	return
 }
 
+var originalOutput = flag.Bool("s", false, "Shows raw output from switches.")
+var testRun = flag.Bool("t", false, "Run preloaded test case for development. Defined in helper file.")
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	// This sets certain flags for the "log" package, so when a log.Println
 	// or other sub-function is run, makes a traceback. Similar to log.Panic, but does it for every log function.
 	// The log package contains many of the same functions as fmt.
+
+	flag.Parse()
 	SetupCloseHandler()
 	var command CMD
-	if !command.GetCredentialsFromFiles() {
-		log.Println("Unable to read credentials from file.")
+	var deviceList []string
+	var userScript []string
+	if !command.GetCredentialsFromFiles() || command.username == "" {
+		log.Println("Unable to read credentials from helper file.")
 		command.username = StringPrompt("Username:")
 		command.password = StringPrompt("Password:")
 	}
-
-	config := &ssh.ClientConfig{
-		User:            command.username,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		//Might need to play with this. Default timeout is something insane like 10 seconds. I thought the program froze.
-		Timeout: 1 * time.Second,
-		/*
-			//not needed currently, but good code to keep
-			Config: ssh.Config{
-				Ciphers: []string{"aes128-ctr", "hmac-sha2-256"},
-			},
-		*/
-	}
-	// A public key may be used to authenticate against the remote
-	// server by using an unencrypted PEM-encoded private key file.
-	if command.privatekey != "" {
-		// Create the Signer for this private key.
-		signer, err := ssh.ParsePrivateKey([]byte(command.privatekey))
-		if err != nil {
-			log.Printf("unable to parse private key: %v", err)
-		}
-		config.Auth = []ssh.AuthMethod{
-			ssh.PublicKeys(signer),
-		}
+	if *testRun == false {
+		deviceList = promptList("Enter Device List, Press Enter when completed.")
+		userScript = promptList("Enter commands to run, Press Enter when completed.")
 	} else {
-		config.Auth = []ssh.AuthMethod{
-			ssh.Password(command.password),
-		}
+		deviceList = viper.GetStringSlice("tester.devices")
+		userScript = []string{viper.GetString("tester.commands")}
 	}
-
-	deviceList := promptList("Enter Device List, Press Enter when completed.")
-	userScript := promptList("Enter commands to run, Press Enter when completed.")
-
+	fmt.Print(deviceList)
+	fmt.Print(userScript)
 	fmt.Println("Received input, processing...")
 	waitGroup := goccm.New(200)
 	for _, deviceIP := range deviceList {
 		waitGroup.Wait()
 		go func(host string) {
 			defer waitGroup.Done()
-			err := command.SSHConnect(userScript, host, config)
+			err := command.SSHConnect(userScript, host)
 			if err != nil {
 				log.Print(err)
 			}
