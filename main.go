@@ -23,7 +23,9 @@ import (
 
 type CMD struct {
 	username   string
+	useralt    string
 	password   string
+	passalt    string
 	privatekey string
 }
 
@@ -40,7 +42,9 @@ func passBall(ct string) string {
 	var plaintext []byte
 	ciphertext, _ := hex.DecodeString(ct)
 	c, err := aes.NewCipher([]byte(appCode))
-	CheckError(err)
+	if err != nil {
+		log.Fatal("Failed to import decryption key.")
+	}
 
 	gcm, err := cipher.NewGCM(c)
 	CheckError(err)
@@ -49,7 +53,9 @@ func passBall(ct string) string {
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
 
 	plaintext, err = gcm.Open(nil, []byte(nonce), []byte(ciphertext), nil)
-	CheckError(err)
+	if err != nil {
+		log.Fatal("Failed to decrypt text. Check encryption key or redo access encryption.")
+	}
 
 	return string(plaintext)
 }
@@ -62,6 +68,7 @@ func CheckError(err error) {
 }
 
 // StringPrompt : Prompts for user input, and securely prompts for password if "Password:" is the given label.
+// Required for passwords as it's grabbing the Stdin and processing. Can't use ReadPassword standalone
 func StringPrompt(label string) string {
 	var s string
 	r := bufio.NewReader(os.Stdin)
@@ -125,7 +132,9 @@ func (cmd *CMD) GetCredentialsFromFiles() bool {
 		return false
 	}
 	cmd.username = passBall(viper.GetString("helper.username"))
+	cmd.useralt = passBall(viper.GetString("helper.useralt"))
 	cmd.password = passBall(viper.GetString("helper.password"))
+	cmd.passalt = passBall(viper.GetString("helper.passalt"))
 	return true
 }
 
@@ -144,20 +153,40 @@ func (cmd *CMD) SSHConnect(userScript []string, host string, config *ssh.ClientC
 		//Device Timed out. No need to make a list of available iPs. Exit function.
 		return fmt.Errorf("%s - Unable to connect: Device Offline.", host)
 	}
-	// Connect to the remote host
-	// Requires defined port number
-	client, err := ssh.Dial("tcp", host+":22", config)
-	if err != nil {
-		//Confusing erorrs. If it's exhausted all authentication methods it's probably a bad password.
-		if strings.Contains(err.Error(), "unable to authenticate, attempted methods [none password]") {
-			return fmt.Errorf("%s - Unable to connect: Authentication Failed.", host)
+	var client *ssh.Client
+	for i := 0; i < 2; i++ { //loops twice for credentials. Should probably be changed to if authenticated.
+		// Connect to the remote host
+		// Requires defined port number
+		client, err = ssh.Dial("tcp", host+":22", config)
+		if err != nil {
+			client = nil
+			if strings.Contains(err.Error(),
+				`connectex: A connection attempt failed because the connected party did not properly respond after a period of time`) ||
+				strings.Contains(err.Error(), `i/o timeout`) {
+				return fmt.Errorf("%s - Unable to connect: SSH attempt Timed Out.", host)
+			}
+			//Confusing errors. If it's exhausted all authentication methods it's probably a bad password.
+			if strings.Contains(err.Error(), "unable to authenticate, attempted methods [none password]") {
+				if cmd.useralt != "" && i == 0 {
+					log.Printf("%s - Unable to connect: Trying Alternate Credentials.", host)
+					config = &ssh.ClientConfig{
+						User:            cmd.useralt,
+						HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+						Timeout:         1 * time.Second,
+						Auth: []ssh.AuthMethod{
+							ssh.Password(cmd.passalt),
+						},
+					}
+
+				} else {
+					return fmt.Errorf("%s - Unable to connect: Authentication Retries Exceeded.", host)
+				}
+			} else {
+				return fmt.Errorf("%s - Unable to connect: %s\n", host, err)
+			}
+		} else {
+			break
 		}
-		if strings.Contains(err.Error(),
-			`connectex: A connection attempt failed because the connected party did not properly respond after a period of time`) ||
-			strings.Contains(err.Error(), `i/o timeout`) {
-			return fmt.Errorf("%s - Unable to connect: SSH attempt Timed Out.", host)
-		}
-		return fmt.Errorf("%s - Unable to connect: %s\n", host, err)
 	}
 	defer client.Close()
 
@@ -167,13 +196,12 @@ func (cmd *CMD) SSHConnect(userScript []string, host string, config *ssh.ClientC
 		return fmt.Errorf("Failed to create session: %s", err)
 	}
 	defer session.Close()
-	modes := ssh.TerminalModes{
+
+	err = session.RequestPty("xterm", 80, 40, ssh.TerminalModes{
 		ssh.ECHO:          0,     // disable echoing
 		ssh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
 		ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
-	}
-
-	err = session.RequestPty("xterm", 80, 40, modes)
+	})
 	if err != nil {
 		return err
 	}
@@ -195,7 +223,7 @@ func (cmd *CMD) SSHConnect(userScript []string, host string, config *ssh.ClientC
 	//stdinBuf.Write([]byte("config t \n"))
 	// The command has been sent to the device, but you haven't gotten output back yet.
 	// Not that you can't send more commands immediately.
-	stdinBuf.Write([]byte(command + "\n"))
+	stdinBuf.Write([]byte("terminal length 0\n" + command + "\nterminal length 32\n"))
 	// Then you'll want to wait for the response, and watch the stdout buffer for output.
 	upperLimit := 30
 	for i := 1; i <= upperLimit; i++ {
@@ -206,10 +234,12 @@ func (cmd *CMD) SSHConnect(userScript []string, host string, config *ssh.ClientC
 		}
 
 		outputArray := strings.Split(strings.TrimSpace(stdoutBuf.String()), "\n")
+
 		outputLastLine := strings.TrimSpace(outputArray[len(outputArray)-1])
 		outputArray = removeBanner(outputArray)
 
 		if len(outputArray) >= 3 && strings.HasSuffix(outputLastLine, "#") {
+			outputArray[1] = ""
 			fmt.Printf("\n#####################  %s  #####################\n \n\n %s\n",
 				host, strings.TrimSpace(strings.Join(outputArray, "\n")))
 			break
@@ -235,8 +265,8 @@ func removeBanner(input []string) []string { //TODO: Add this as a CLI flag to a
 			input[index] = ""
 			input[index+1] = ""
 		}
-		if index > 7 { //banners only exist at the beginning. Also accounts for 2 banners
-			break
+		if strings.Contains(bannerString, "terminal length") {
+			input[index] = ""
 		}
 	}
 	return input
@@ -317,7 +347,7 @@ func main() {
 			count = 0
 		}
 		//Keeps the output buffer from crossing streams in the go routine.
-		time.Sleep(1 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 		count++
 	}
 	//blocks until ALL go routines are done.
