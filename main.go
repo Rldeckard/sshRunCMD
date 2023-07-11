@@ -381,12 +381,12 @@ func main() {
 
 	//blocks until ALL go routines are done.
 	waitGroup.WaitAllDone()
-	for i := 0; i >= 50; i++ {
+	for i := 0; i <= 50; i++ {
 		if bar.Current() == int64(len(deviceList)) {
 			bar.Finish()
 			break
 		}
-		time.Sleep(1 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 	if *verboseOutput {
 		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully able to connect and run commands (%d) : %s", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.onlineDevices), strings.Join(progress.onlineDevices, ","))
