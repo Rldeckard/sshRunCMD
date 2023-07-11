@@ -377,7 +377,7 @@ func main() {
 
 	//blocks until ALL go routines are done.
 	waitGroup.WaitAllDone()
-	for {
+	for i := 0; i >= 50; i++ {
 		if bar.Current() == int64(len(deviceList)) {
 			bar.Finish()
 			break
