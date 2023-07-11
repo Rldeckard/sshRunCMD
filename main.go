@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/cheggaaa/pb/v3"
 	"log"
 	"os"
 	"os/signal"
@@ -18,7 +19,6 @@ import (
 	"github.com/go-ping/ping"
 	"github.com/spf13/viper"
 	"github.com/zenthangplus/goccm"
-
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 )
@@ -29,6 +29,15 @@ type CMD struct {
 	fallbackUser string
 	fallbackPass string
 	privatekey   string
+}
+
+type Progress struct {
+	offline         int
+	offlineDevices  []string
+	unauthed        int
+	unauthedDevices []string
+	online          int
+	onlineDevices   []string
 }
 
 // encryption key used to decrypt helper.yml
@@ -186,6 +195,8 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 	stats := pinger.Statistics()                                                              // get send/receive/rtt stats
 	if stats.PacketsRecv == 0 {
 		//Device Timed out. No need to make a list of available iPs. Exit function.
+		progress.offline++
+		progress.offlineDevices = append(progress.offlineDevices, host)
 		return fmt.Errorf("%s - Unable to connect: Device Offline.", host)
 	}
 	var client *ssh.Client
@@ -198,6 +209,8 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 			if strings.Contains(err.Error(),
 				`connectex: A connection attempt failed because the connected party did not properly respond after a period of time`) ||
 				strings.Contains(err.Error(), `i/o timeout`) {
+				progress.unauthed++
+				progress.unauthedDevices = append(progress.unauthedDevices, host)
 				return fmt.Errorf("%s - Unable to connect: SSH attempt Timed Out.", host)
 			}
 			//Confusing errors. If it's exhausted all authentication methods it's probably a bad password.
@@ -210,9 +223,13 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 					}
 
 				} else {
+					progress.unauthed++
+					progress.unauthedDevices = append(progress.unauthedDevices, host)
 					return fmt.Errorf("%s - Unable to connect: Authentication Retries Exceeded.", host)
 				}
 			} else {
+				progress.unauthed++
+				progress.unauthedDevices = append(progress.unauthedDevices, host)
 				return fmt.Errorf("%s - Unable to connect: %s\n", host, err)
 			}
 		} else {
@@ -279,6 +296,8 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 			log.Printf("%s - No output received. Timed Out.", host)
 		}
 	}
+	progress.online++
+	progress.onlineDevices = append(progress.onlineDevices, host)
 	return nil
 }
 
@@ -312,6 +331,7 @@ func SetupCloseHandler() {
 
 var originalOutput = flag.Bool("s", false, "Shows raw output from switches.")
 var testRun = flag.Bool("t", false, "Run preloaded test case for development. Defined in helper file.")
+var progress Progress
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -340,11 +360,13 @@ func main() {
 	fmt.Print(userScript)
 	fmt.Println("Received input, processing...")
 	waitGroup := goccm.New(200)
+	bar := pb.StartNew(len(deviceList))
 	for _, deviceIP := range deviceList {
 		waitGroup.Wait()
 		go func(host string) {
 			defer waitGroup.Done()
 			err := command.SSHConnect(userScript, host)
+			bar.Increment()
 			if err != nil {
 				log.Print(err)
 			}
@@ -355,5 +377,5 @@ func main() {
 
 	//blocks until ALL go routines are done.
 	waitGroup.WaitAllDone()
-
+	fmt.Printf("Status report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully able to connect and run commands (%d) : %s", progress.offline, strings.Join(progress.offlineDevices, ","), progress.unauthed, strings.Join(progress.unauthedDevices, ","), progress.online, strings.Join(progress.onlineDevices, ","))
 }
