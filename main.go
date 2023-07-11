@@ -8,7 +8,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"github.com/cheggaaa/pb/v3"
+	"github.com/schollz/progressbar/v3"
 	"log"
 	"os"
 	"os/signal"
@@ -361,11 +361,12 @@ func main() {
 	fmt.Print(userScript)
 	fmt.Println("Received input, processing...")
 	waitGroup := goccm.New(200)
-	bar := pb.StartNew(len(deviceList))
+	//bar := pb.StartNew(len(deviceList)).SetTemplate(pb.Simple).SetRefreshRate(100 * time.Millisecond) //Default refresh rate is 200 Milliseconds.
+	bar := progressbar.Default(int64(len(deviceList)))
 	for _, deviceIP := range deviceList {
 		waitGroup.Wait()
 		go func(host string) {
-			defer bar.Increment()
+			defer bar.Add(1)
 			defer waitGroup.Done()
 			err := command.SSHConnect(userScript, host)
 			if err != nil {
@@ -378,6 +379,9 @@ func main() {
 
 	//blocks until ALL go routines are done.
 	waitGroup.WaitAllDone()
+	for !bar.IsFinished() {
+		time.Sleep(1 * time.Millisecond)
+	}
 	if *verboseOutput {
 		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully able to connect and run commands (%d) : %s", progress.offline, strings.Join(progress.offlineDevices, ","), progress.unauthed, strings.Join(progress.unauthedDevices, ","), progress.online, strings.Join(progress.onlineDevices, ","))
 	} else {
