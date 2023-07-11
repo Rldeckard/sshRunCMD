@@ -208,7 +208,6 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 			}
 			client, err = cmd.dialClient(host, config)
 			if err != nil {
-        progress.unauthed++
 				progress.unauthedDevices = append(progress.unauthedDevices, host)
 				return fmt.Errorf("%s - %s\n", host, err)
 			}
@@ -240,11 +239,8 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 	if err != nil {
 		log.Fatal(fmt.Sprintf("%s - Unable to start session: %s", host, err))
 	}
-	session.Shell()
-	if err != nil {
-		log.Fatal(fmt.Sprintf("%s - Unable to start session: %s", host, err))
-	}
 
+	session.Shell()
 	command := strings.Join(userScript, "\n")
 	//can use multiple of these buffer writes in a row, but I just used 1 string.
 	//stdinBuf.Write([]byte("config t \n"))
@@ -275,7 +271,6 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 			log.Printf("%s - No output received. Timed Out.", host)
 		}
 	}
-	progress.online++
 	progress.onlineDevices = append(progress.onlineDevices, host)
 	return nil
 }
@@ -287,17 +282,15 @@ func (cmd *CMD) dialClient(host string, config *ssh.ClientConfig) (*ssh.Client, 
 		if strings.Contains(err.Error(),
 			`connectex: A connection attempt failed because the connected party did not properly respond after a period of time`) ||
 			strings.Contains(err.Error(), `i/o timeout`) {
-      progress.unauthed++
 			progress.unauthedDevices = append(progress.unauthedDevices, host)
 			return nil, fmt.Errorf("Unable to connect: SSH attempt Timed Out.")
 		}
 		//Confusing errors. If it's exhausted all authentication methods it's probably a bad password.
-    //We don't want to gather the progress here, because this error gets reused in the return.
+		//We don't want to gather the progress here, because this error gets reused in the return.
 		if strings.Contains(err.Error(), "unable to authenticate, attempted methods [none password]") {
 			return nil, fmt.Errorf("Unable to connect: Authentication Failed")
 		} else {
-      	progress.unauthed++
-				progress.unauthedDevices = append(progress.unauthedDevices, host)
+			progress.unauthedDevices = append(progress.unauthedDevices, host)
 			return nil, fmt.Errorf("Unable to connect: %s", err)
 		}
 	}
@@ -396,8 +389,8 @@ func main() {
 		time.Sleep(1 * time.Millisecond)
 	}
 	if *verboseOutput {
-		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully able to connect and run commands (%d) : %s", progress.offline, strings.Join(progress.offlineDevices, ","), progress.unauthed, strings.Join(progress.unauthedDevices, ","), progress.online, strings.Join(progress.onlineDevices, ","))
+		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully able to connect and run commands (%d) : %s", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.onlineDevices), strings.Join(progress.onlineDevices, ","))
 	} else {
-		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully able to connect and run commands (%d)", progress.offline, strings.Join(progress.offlineDevices, ","), progress.unauthed, strings.Join(progress.unauthedDevices, ","), progress.online)
+		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully able to connect and run commands (%d)", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.onlineDevices))
 	}
 }
