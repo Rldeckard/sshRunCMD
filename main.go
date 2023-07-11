@@ -152,9 +152,7 @@ func (cmd *CMD) GetCredentialsFromFiles() bool {
 	cmd.fallbackPass = passBall(viper.GetString("helper.fallbackPass"))
 	return true
 }
-
-// SSHConnect : Run command against a host
-func (cmd *CMD) SSHConnect(userScript []string, host string) error {
+func (cmd *CMD) initSSHConfig() *ssh.ClientConfig {
 	config := &ssh.ClientConfig{
 		User:            cmd.username,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
@@ -183,6 +181,14 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 			ssh.Password(cmd.password),
 		}
 	}
+	return config
+}
+
+// SSHConnect : Run command against a host
+func (cmd *CMD) SSHConnect(userScript []string, host string) error {
+
+	config := cmd.initSSHConfig()
+
 	pinger, err := ping.NewPinger(host)
 	if err != nil {
 		fmt.Errorf("Pings not working: %s", err)
@@ -194,7 +200,6 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 	stats := pinger.Statistics()                                                              // get send/receive/rtt stats
 	if stats.PacketsRecv == 0 {
 		//Device Timed out. No need to make a list of available iPs. Exit function.
-		progress.offline++
 		progress.offlineDevices = append(progress.offlineDevices, host)
 		return fmt.Errorf("%s - Unable to connect: Device Offline.", host)
 	}
@@ -336,6 +341,7 @@ func SetupCloseHandler() {
 var originalOutput = flag.Bool("s", false, "Shows raw output from switches.")
 var testRun = flag.Bool("t", false, "Run preloaded test case for development. Defined in helper file.")
 var verboseOutput = flag.Bool("v", false, "Output all successfully connected devices.")
+var dontVerifyCreds = flag.Bool("c", false, "Doesn't verify your credentials against a known device. Be careful to not lock out your account.")
 var progress Progress
 
 func main() {
@@ -353,6 +359,13 @@ func main() {
 		log.Println("Unable to read credentials from helper file.")
 		command.username = StringPrompt("Username:")
 		command.password = StringPrompt("Password:")
+	}
+	if !*dontVerifyCreds {
+		//checks credentials against a default device so you don't lock yourself out
+		_, err := command.dialClient(viper.GetString("helper.core"), command.initSSHConfig())
+		if err != nil {
+			log.Fatalf("Supplied Credentials not working.")
+		}
 	}
 	if *testRun == false {
 		deviceList = promptList("Enter Device List, Press Enter when completed.")
