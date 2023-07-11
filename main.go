@@ -377,7 +377,11 @@ func main() {
 
 	//blocks until ALL go routines are done.
 	waitGroup.WaitAllDone()
-	for !bar.IsFinished() {
+	for {
+		if bar.Current() == int64(len(deviceList)) {
+			bar.Finish()
+			break
+		}
 		time.Sleep(1 * time.Millisecond)
 	}
 	if *verboseOutput {
