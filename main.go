@@ -198,45 +198,25 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 		progress.offlineDevices = append(progress.offlineDevices, host)
 		return fmt.Errorf("%s - Unable to connect: Device Offline.", host)
 	}
-	var client *ssh.Client
-	for i := 0; i < 2; i++ { //loops twice for credentials. Should probably be changed to if authenticated.
-		// Connect to the remote host
-		// Requires defined port number
-		client, err = ssh.Dial("tcp", host+":22", config)
-		if err != nil {
-			client = nil
-			if strings.Contains(err.Error(),
-				`connectex: A connection attempt failed because the connected party did not properly respond after a period of time`) ||
-				strings.Contains(err.Error(), `i/o timeout`) {
-				progress.unauthed++
-				progress.unauthedDevices = append(progress.unauthedDevices, host)
-				return fmt.Errorf("%s - Unable to connect: SSH attempt Timed Out.", host)
+	client, err := cmd.dialClient(host, config)
+	if err != nil {
+		if cmd.fallbackUser != "" || strings.Contains("Authentication Failed", err.Error()) {
+			log.Printf("%s - Unable to connect: Trying Alternate Credentials.", host)
+			config.User = cmd.fallbackUser
+			config.Auth = []ssh.AuthMethod{
+				ssh.Password(cmd.fallbackPass),
 			}
-			//Confusing errors. If it's exhausted all authentication methods it's probably a bad password.
-			if strings.Contains(err.Error(), "unable to authenticate, attempted methods [none password]") {
-				if cmd.fallbackUser != "" && i == 0 {
-					log.Printf("%s - Unable to connect: Trying Alternate Credentials.", host)
-					config.User = cmd.fallbackUser
-					config.Auth = []ssh.AuthMethod{
-						ssh.Password(cmd.fallbackPass),
-					}
-
-				} else {
-					progress.unauthed++
-					progress.unauthedDevices = append(progress.unauthedDevices, host)
-					return fmt.Errorf("%s - Unable to connect: Authentication Retries Exceeded.", host)
-				}
-			} else {
-				progress.unauthed++
+			client, err = cmd.dialClient(host, config)
+			if err != nil {
+        progress.unauthed++
 				progress.unauthedDevices = append(progress.unauthedDevices, host)
-				return fmt.Errorf("%s - Unable to connect: %s\n", host, err)
+				return fmt.Errorf("%s - %s\n", host, err)
 			}
 		} else {
-			break
+			return fmt.Errorf("%s - %s\n", host, err)
 		}
 	}
 	defer client.Close()
-
 	// Open a session
 	session, err := client.NewSession()
 	if err != nil {
@@ -283,12 +263,12 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 		outputLastLine := strings.TrimSpace(outputArray[len(outputArray)-1])
 
 		if len(outputArray) >= 3 && strings.HasSuffix(outputLastLine, "#") {
-			if *originalOutput == false {
-				outputArray = removeBanner(outputArray)
-			}
+			outputArray, failedCommand := processOutput(outputArray)
 			fmt.Printf("\n#####################  %s  #####################\n \n\n %s\n",
 				host, strings.TrimSpace(strings.Join(outputArray, "\n")))
-
+			if failedCommand == true {
+				log.Printf("%s - Command not applied to switch.", host)
+			}
 			break
 		}
 		if i == upperLimit {
@@ -299,20 +279,52 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 	progress.onlineDevices = append(progress.onlineDevices, host)
 	return nil
 }
-
-// removes the banners from the output array to make the code easier to digest.
-func removeBanner(input []string) []string {
-	for index, bannerString := range input {
-		if strings.Contains(bannerString, "-------------------------------") {
-			input[index-1] = ""
-			input[index] = ""
-			input[index+1] = ""
+func (cmd *CMD) dialClient(host string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	// Connect to the remote host
+	// Requires defined port number
+	client, err := ssh.Dial("tcp", host+":22", config)
+	if err != nil {
+		if strings.Contains(err.Error(),
+			`connectex: A connection attempt failed because the connected party did not properly respond after a period of time`) ||
+			strings.Contains(err.Error(), `i/o timeout`) {
+      progress.unauthed++
+			progress.unauthedDevices = append(progress.unauthedDevices, host)
+			return nil, fmt.Errorf("Unable to connect: SSH attempt Timed Out.")
 		}
-		if strings.Contains(bannerString, "terminal length") {
-			input[index] = ""
+		//Confusing errors. If it's exhausted all authentication methods it's probably a bad password.
+    //We don't want to gather the progress here, because this error gets reused in the return.
+		if strings.Contains(err.Error(), "unable to authenticate, attempted methods [none password]") {
+			return nil, fmt.Errorf("Unable to connect: Authentication Failed")
+		} else {
+      	progress.unauthed++
+				progress.unauthedDevices = append(progress.unauthedDevices, host)
+			return nil, fmt.Errorf("Unable to connect: %s", err)
 		}
 	}
-	return input
+
+	return client, nil
+}
+
+// Removes the banners from the output array to make the code easier to digest.
+// Also looks for any errors in the execution.
+func processOutput(input []string) ([]string, bool) {
+	failedCommand := false
+	for index, bannerString := range input {
+		if *originalOutput == false {
+			if strings.Contains(bannerString, "-------------------------------") {
+				input[index-1] = ""
+				input[index] = ""
+				input[index+1] = ""
+			}
+			if strings.Contains(bannerString, "terminal length") {
+				input[index] = ""
+			}
+		}
+		if strings.Contains(bannerString, "% Invalid") {
+			failedCommand = true
+		}
+	}
+	return input, failedCommand
 
 }
 
@@ -356,9 +368,8 @@ func main() {
 		deviceList = viper.GetStringSlice("tester.devices")
 		userScript = []string{viper.GetString("tester.commands")}
 	}
-	fmt.Print(deviceList)
-	fmt.Print(userScript)
 	fmt.Println("Received input, processing...")
+
 	waitGroup := goccm.New(200)
 	bar := pb.StartNew(len(deviceList)).SetTemplate(pb.Simple).SetRefreshRate(100 * time.Millisecond) //Default refresh rate is 200 Milliseconds.
 	for _, deviceIP := range deviceList {
