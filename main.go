@@ -224,7 +224,7 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 	// Open a session
 	session, err := client.NewSession()
 	if err != nil {
-		return fmt.Errorf("Failed to create session: %s", err)
+		log.Fatal(fmt.Sprintf("%s - Failed to create session: %s", host, err))
 	}
 	defer session.Close()
 
@@ -234,7 +234,7 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 		ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
 	})
 	if err != nil {
-		return err
+		log.Fatal(fmt.Sprintf("%s - Unable to start session: %s", host, err))
 	}
 
 	var stdoutBuf bytes.Buffer
@@ -242,11 +242,11 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 
 	stdinBuf, err := session.StdinPipe()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(fmt.Sprintf("%s - Unable to start session: %s", host, err))
 	}
 	session.Shell()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(fmt.Sprintf("%s - Unable to start session: %s", host, err))
 	}
 
 	command := strings.Join(userScript, "\n")
@@ -259,21 +259,20 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 	upperLimit := 30
 	for i := 1; i <= upperLimit; i++ {
 		if i > 10 {
-			time.Sleep(time.Duration(100 * time.Millisecond))
+			time.Sleep(100 * time.Millisecond)
 		} else {
-			time.Sleep(time.Duration(25) * time.Millisecond))
+			time.Sleep(40 * time.Millisecond)
 		}
-
 		outputArray := strings.Split(strings.TrimSpace(stdoutBuf.String()), "\n")
 		outputLastLine := strings.TrimSpace(outputArray[len(outputArray)-1])
-		if *originalOutput == false {
-			outputArray = removeBanner(outputArray)
-		}
 
 		if len(outputArray) >= 3 && strings.HasSuffix(outputLastLine, "#") {
-			outputArray[1] = ""
+			if *originalOutput == false {
+				outputArray = removeBanner(outputArray)
+			}
 			fmt.Printf("\n#####################  %s  #####################\n \n\n %s\n",
 				host, strings.TrimSpace(strings.Join(outputArray, "\n")))
+
 			break
 		}
 		if i == upperLimit {
@@ -283,14 +282,8 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 	return nil
 }
 
-// getLastLine : Fetch Last line of string
-func getLastLine(input string) string {
-	results := strings.Split(input, "\n")
-	return results[len(results)-1]
-}
-
 // removes the banners from the output array to make the code easier to digest.
-func removeBanner(input []string) []string { //TODO: Add this as a CLI flag to add banners back.
+func removeBanner(input []string) []string {
 	for index, bannerString := range input {
 		if strings.Contains(bannerString, "-------------------------------") {
 			input[index-1] = ""
@@ -298,7 +291,6 @@ func removeBanner(input []string) []string { //TODO: Add this as a CLI flag to a
 			input[index+1] = ""
 		}
 		if strings.Contains(bannerString, "terminal length") {
-			fmt.Print(input[index])
 			input[index] = ""
 		}
 	}
