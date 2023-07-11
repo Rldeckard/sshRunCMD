@@ -31,12 +31,11 @@ type CMD struct {
 }
 
 type Progress struct {
-	offline         int
-	offlineDevices  []string
-	unauthed        int
-	unauthedDevices []string
-	online          int
-	onlineDevices   []string
+	offlineDevices        []string
+	unauthedDevices       []string
+	connectedDevices      []string
+	failedCommandsDevices []string
+	failedCommands        []string
 }
 
 // encryption key used to decrypt helper.yml
@@ -152,7 +151,9 @@ func (cmd *CMD) GetCredentialsFromFiles() bool {
 	cmd.fallbackPass = passBall(viper.GetString("helper.fallbackPass"))
 	return true
 }
-func (cmd *CMD) initSSHConfig() *ssh.ClientConfig {
+
+// SSHConnect : Run command against a host
+func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 	config := &ssh.ClientConfig{
 		User:            cmd.username,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
@@ -181,14 +182,6 @@ func (cmd *CMD) initSSHConfig() *ssh.ClientConfig {
 			ssh.Password(cmd.password),
 		}
 	}
-	return config
-}
-
-// SSHConnect : Run command against a host
-func (cmd *CMD) SSHConnect(userScript []string, host string) error {
-
-	config := cmd.initSSHConfig()
-
 	pinger, err := ping.NewPinger(host)
 	if err != nil {
 		fmt.Errorf("Pings not working: %s", err)
@@ -244,7 +237,6 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 	if err != nil {
 		log.Fatal(fmt.Sprintf("%s - Unable to start session: %s", host, err))
 	}
-
 	session.Shell()
 	command := strings.Join(userScript, "\n")
 	//can use multiple of these buffer writes in a row, but I just used 1 string.
@@ -269,6 +261,10 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 				host, strings.TrimSpace(strings.Join(outputArray, "\n")))
 			if failedCommand == true {
 				log.Printf("%s - Command not applied to switch.", host)
+				progress.failedCommandsDevices = append(progress.failedCommandsDevices, host)
+				progress.failedCommands = append(progress.failedCommands, command)
+			} else {
+				progress.connectedDevices = append(progress.connectedDevices, host)
 			}
 			break
 		}
@@ -276,7 +272,6 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 			log.Printf("%s - No output received. Timed Out.", host)
 		}
 	}
-	progress.onlineDevices = append(progress.onlineDevices, host)
 	return nil
 }
 func (cmd *CMD) dialClient(host string, config *ssh.ClientConfig) (*ssh.Client, error) {
@@ -341,7 +336,6 @@ func SetupCloseHandler() {
 var originalOutput = flag.Bool("s", false, "Shows raw output from switches.")
 var testRun = flag.Bool("t", false, "Run preloaded test case for development. Defined in helper file.")
 var verboseOutput = flag.Bool("v", false, "Output all successfully connected devices.")
-var dontVerifyCreds = flag.Bool("c", false, "Doesn't verify your credentials against a known device. Be careful to not lock out your account.")
 var progress Progress
 
 func main() {
@@ -359,13 +353,6 @@ func main() {
 		log.Println("Unable to read credentials from helper file.")
 		command.username = StringPrompt("Username:")
 		command.password = StringPrompt("Password:")
-	}
-	if !*dontVerifyCreds {
-		//checks credentials against a default device so you don't lock yourself out
-		_, err := command.dialClient(viper.GetString("helper.core"), command.initSSHConfig())
-		if err != nil {
-			log.Fatalf("Supplied Credentials not working.")
-		}
 	}
 	if *testRun == false {
 		deviceList = promptList("Enter Device List, Press Enter when completed.")
@@ -402,8 +389,8 @@ func main() {
 		time.Sleep(5 * time.Millisecond)
 	}
 	if *verboseOutput {
-		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully able to connect and run commands (%d) : %s", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.onlineDevices), strings.Join(progress.onlineDevices, ","))
+		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands (%d) \"%s\" on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d) : %s", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.failedCommands), strings.Join(progress.failedCommands, ","), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, ","), len(progress.connectedDevices), strings.Join(progress.connectedDevices, ","))
 	} else {
-		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully able to connect and run commands (%d)", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.onlineDevices))
+		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands (%d) \"%s\" on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d)", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.failedCommands), strings.Join(progress.failedCommands, ","), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, ","), len(progress.connectedDevices))
 	}
 }
