@@ -3,7 +3,7 @@ module GoRunCMD
 go 1.20
 
 require (
-	github.com/cheggaaa/pb/v3 v3.1.3
+	github.com/cheggaaa/pb/v3 v3.1.2
 	github.com/go-ping/ping v1.1.0
 	github.com/spf13/viper v1.16.0
 	github.com/zenthangplus/goccm v1.1.3
