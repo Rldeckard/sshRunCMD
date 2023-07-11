@@ -8,19 +8,18 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"github.com/schollz/progressbar/v3"
+	"github.com/cheggaaa/pb/v3"
+	"github.com/go-ping/ping"
+	"github.com/spf13/viper"
+	"github.com/zenthangplus/goccm"
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 	"log"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/go-ping/ping"
-	"github.com/spf13/viper"
-	"github.com/zenthangplus/goccm"
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/term"
 )
 
 type CMD struct {
@@ -361,12 +360,11 @@ func main() {
 	fmt.Print(userScript)
 	fmt.Println("Received input, processing...")
 	waitGroup := goccm.New(200)
-	//bar := pb.StartNew(len(deviceList)).SetTemplate(pb.Simple).SetRefreshRate(100 * time.Millisecond) //Default refresh rate is 200 Milliseconds.
-	bar := progressbar.Default(int64(len(deviceList)))
+	bar := pb.StartNew(len(deviceList)).SetTemplate(pb.Simple).SetRefreshRate(100 * time.Millisecond) //Default refresh rate is 200 Milliseconds.
 	for _, deviceIP := range deviceList {
 		waitGroup.Wait()
 		go func(host string) {
-			defer bar.Add(1)
+			defer bar.Increment()
 			defer waitGroup.Done()
 			err := command.SSHConnect(userScript, host)
 			if err != nil {

@@ -3,8 +3,8 @@ module GoRunCMD
 go 1.20
 
 require (
+	github.com/cheggaaa/pb/v3 v3.1.3
 	github.com/go-ping/ping v1.1.0
-	github.com/schollz/progressbar/v3 v3.13.1
 	github.com/spf13/viper v1.16.0
 	github.com/zenthangplus/goccm v1.1.3
 	golang.org/x/crypto v0.11.0
@@ -12,12 +12,15 @@ require (
 )
 
 require (
+	github.com/VividCortex/ewma v1.2.0 // indirect
+	github.com/fatih/color v1.15.0 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/mattn/go-runewidth v0.0.14 // indirect
-	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.8 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
