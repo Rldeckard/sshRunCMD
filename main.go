@@ -331,6 +331,7 @@ func SetupCloseHandler() {
 
 var originalOutput = flag.Bool("s", false, "Shows raw output from switches.")
 var testRun = flag.Bool("t", false, "Run preloaded test case for development. Defined in helper file.")
+var verboseOutput = flag.Bool("v", false, "Output all successfully connected devices.")
 var progress Progress
 
 func main() {
@@ -362,11 +363,11 @@ func main() {
 	waitGroup := goccm.New(200)
 	bar := pb.StartNew(len(deviceList))
 	for _, deviceIP := range deviceList {
+		bar.Increment()
 		waitGroup.Wait()
 		go func(host string) {
 			defer waitGroup.Done()
 			err := command.SSHConnect(userScript, host)
-			bar.Increment()
 			if err != nil {
 				log.Print(err)
 			}
@@ -377,5 +378,9 @@ func main() {
 
 	//blocks until ALL go routines are done.
 	waitGroup.WaitAllDone()
-	fmt.Printf("Status report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully able to connect and run commands (%d) : %s", progress.offline, strings.Join(progress.offlineDevices, ","), progress.unauthed, strings.Join(progress.unauthedDevices, ","), progress.online, strings.Join(progress.onlineDevices, ","))
+	if *verboseOutput {
+		fmt.Printf("Status report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully able to connect and run commands (%d) : %s", progress.offline, strings.Join(progress.offlineDevices, ","), progress.unauthed, strings.Join(progress.unauthedDevices, ","), progress.online, strings.Join(progress.onlineDevices, ","))
+	} else {
+		fmt.Printf("Status report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully able to connect and run commands (%d)", progress.offline, strings.Join(progress.offlineDevices, ","), progress.unauthed, strings.Join(progress.unauthedDevices, ","), progress.online)
+	}
 }
