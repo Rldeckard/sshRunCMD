@@ -1,14 +1,14 @@
 package main
 
 import (
-	"GoRunCMD/closeHandler"
-	"GoRunCMD/userPrompt"
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/Rldeckard/sshRunCMD/closeHandler"
+	"github.com/Rldeckard/sshRunCMD/userPrompt"
 	"github.com/cheggaaa/pb/v3"
 	"github.com/go-ping/ping"
 	"github.com/spf13/viper"

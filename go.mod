@@ -1,4 +1,4 @@
-module GoRunCMD
+module github.com/Rldeckard/sshRunCMD
 
 go 1.20
 
