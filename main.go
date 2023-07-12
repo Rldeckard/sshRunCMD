@@ -2,11 +2,9 @@ package main
 
 import (
 	"bytes"
-	"crypto/aes"
-	"crypto/cipher"
-	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/Rldeckard/aesGenerate32/authGen"
 	"github.com/Rldeckard/sshRunCMD/closeHandler"
 	"github.com/Rldeckard/sshRunCMD/userPrompt"
 	"github.com/cheggaaa/pb/v3"
@@ -42,40 +40,6 @@ type Progress struct {
 //	key: 'fasdfasdfasdfasdf'
 var appCode string
 
-// passBall : This function is used to pass encrypted credentials.
-// Don't forget to update the appCode with a new 32 bit string per application.
-func passBall(ct string) string {
-	if ct == "" { //basically a catch for not providing alternate credentials
-		return ""
-	}
-	var plaintext []byte
-	ciphertext, _ := hex.DecodeString(ct)
-	c, err := aes.NewCipher([]byte(appCode))
-	if err != nil {
-		log.Fatal("Failed to import decryption key.")
-	}
-
-	gcm, err := cipher.NewGCM(c)
-	CheckError(err)
-
-	nonceSize := gcm.NonceSize()
-	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-
-	plaintext, err = gcm.Open(nil, []byte(nonce), []byte(ciphertext), nil)
-	if err != nil {
-		log.Fatal("Failed to decrypt text. Check encryption key or redo access encryption.")
-	}
-
-	return string(plaintext)
-}
-
-// CheckError : default error checker. Built in if statement.
-func CheckError(err error) {
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
 // Reads username and password from config files and defines them inside the CMD type.
 func (cmd *CMD) GetCredentialsFromFiles() bool {
 	viper.AddConfigPath(".")
@@ -94,10 +58,10 @@ func (cmd *CMD) GetCredentialsFromFiles() bool {
 		log.Println(err)
 		return false
 	}
-	cmd.username = passBall(viper.GetString("helper.username"))
-	cmd.password = passBall(viper.GetString("helper.password"))
-	cmd.fallbackUser = passBall(viper.GetString("helper.fallbackUser"))
-	cmd.fallbackPass = passBall(viper.GetString("helper.fallbackPass"))
+	cmd.username = auth32.DecryptAES(appCode, viper.GetString("helper.username"))
+	cmd.password = auth32.DecryptAES(appCode, viper.GetString("helper.password"))
+	cmd.fallbackUser = auth32.DecryptAES(appCode, viper.GetString("helper.fallbackUser"))
+	cmd.fallbackPass = auth32.DecryptAES(appCode, viper.GetString("helper.fallbackPass"))
 	return true
 }
 func (cmd *CMD) initSSHConfig() *ssh.ClientConfig {
