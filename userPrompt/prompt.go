@@ -63,7 +63,7 @@ func List(label string) []string {
 func Scan(label string) string {
 	var userInput string
 
-	fmt.Println(label)
+	fmt.Print(label)
 
 	fmt.Scan(&userInput)
 
