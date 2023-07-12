@@ -43,7 +43,6 @@ func List(label string) []string {
 	for {
 		scanner.Scan()
 		line := scanner.Text()
-
 		// break the loop if line is empty
 		if len(line) == 0 {
 			break
