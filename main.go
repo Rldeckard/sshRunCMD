@@ -31,12 +31,11 @@ type CMD struct {
 }
 
 type Progress struct {
-	offline         int
-	offlineDevices  []string
-	unauthed        int
-	unauthedDevices []string
-	online          int
-	onlineDevices   []string
+	offlineDevices        []string
+	unauthedDevices       []string
+	connectedDevices      []string
+	failedCommandsDevices []string
+	failedCommands        []string
 }
 
 // encryption key used to decrypt helper.yml
@@ -268,7 +267,11 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 			fmt.Printf("\n#####################  %s  #####################\n \n\n %s\n",
 				host, strings.TrimSpace(strings.Join(outputArray, "\n")))
 			if failedCommand == true {
+				progress.failedCommandsDevices = append(progress.failedCommandsDevices, host)
+				progress.failedCommands = append(progress.failedCommands, command)
 				log.Printf("%s - Command not applied to switch.", host)
+			} else {
+				progress.connectedDevices = append(progress.connectedDevices, host)
 			}
 			break
 		}
@@ -276,7 +279,6 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 			log.Printf("%s - No output received. Timed Out.", host)
 		}
 	}
-	progress.onlineDevices = append(progress.onlineDevices, host)
 	return nil
 }
 func (cmd *CMD) dialClient(host string, config *ssh.ClientConfig) (*ssh.Client, error) {
@@ -402,8 +404,8 @@ func main() {
 		time.Sleep(5 * time.Millisecond)
 	}
 	if *verboseOutput {
-		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully able to connect and run commands (%d) : %s", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.onlineDevices), strings.Join(progress.onlineDevices, ","))
+		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands: (%d) \"%s\" on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d) : %s", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.failedCommands), strings.Join(progress.failedCommands, ","), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, ","), len(progress.connectedDevices), strings.Join(progress.connectedDevices, ","))
 	} else {
-		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully able to connect and run commands (%d)", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.onlineDevices))
+		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands: (%d) \"%s\" on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d)", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.failedCommands), strings.Join(progress.failedCommands, ","), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, ","), len(progress.connectedDevices))
 	}
 }
