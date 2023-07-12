@@ -1,4 +1,4 @@
-package main
+package closeHandler
 
 import (
 	"fmt"
@@ -7,8 +7,8 @@ import (
 	"syscall"
 )
 
-// SetupCloseHandler : Catch ^C and gracefully shutdown.
-func SetupCloseHandler() {
+// Setup a listener thorugh a seperate Go Routine to Catch ^C and gracefully shutdown.
+func Listener() {
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
