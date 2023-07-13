@@ -33,13 +33,6 @@ type Progress struct {
 	failedCommands        []string
 }
 
-// encryption key used to decrypt helper.yml
-// create 'helper.key' file to store appCode. Copy below code format for yml
-// helper:
-//
-//	key: 'fasdfasdfasdfasdf'
-var appCode string
-
 // Reads username and password from config files and defines them inside the CMD type.
 func (cmd *CMD) GetCredentialsFromFiles() bool {
 	viper.AddConfigPath(".")
@@ -100,7 +93,7 @@ func (cmd *CMD) initSSHConfig() *ssh.ClientConfig {
 func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 
 	config := cmd.initSSHConfig()
-
+	altCreds := ""
 	pinger, err := ping.NewPinger(host)
 	if err != nil {
 		return fmt.Errorf("Pings not working: %s", err)
@@ -118,7 +111,7 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 	client, err := cmd.dialClient(host, config)
 	if err != nil {
 		if cmd.fallbackUser != "" || strings.Contains("Authentication Failed", err.Error()) {
-			log.Printf("%s - Unable to connect: Trying Alternate Credentials.", host)
+
 			config.User = cmd.fallbackUser
 			config.Auth = []ssh.AuthMethod{
 				ssh.Password(cmd.fallbackPass),
@@ -127,8 +120,11 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 			if err != nil {
 				progress.unauthedDevices = append(progress.unauthedDevices, host)
 				return fmt.Errorf("%s - %s\n", host, err)
+			} else {
+				altCreds = "Using Alternate Credentials"
 			}
 		} else {
+			progress.unauthedDevices = append(progress.unauthedDevices, host)
 			return fmt.Errorf("%s - %s\n", host, err)
 		}
 	}
@@ -177,11 +173,11 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 
 		if len(outputArray) >= 3 && strings.HasSuffix(outputLastLine, "#") {
 			outputArray, failedCommand := processOutput(outputArray)
-			fmt.Printf("\n#####################  %s  #####################\n \n\n %s\n",
-				host, strings.TrimSpace(strings.Join(outputArray, "\n")))
+			fmt.Printf("\n#####################  %s  #####################\n%s \n\n%s\n",
+				host, altCreds, strings.TrimSpace(strings.Join(outputArray, "\n")))
 			if failedCommand == true {
 				progress.failedCommandsDevices = append(progress.failedCommandsDevices, host)
-				progress.failedCommands = append(progress.failedCommands, command)
+				progress.failedCommands = append(progress.failedCommands, strings.Join(userScript, ","))
 				log.Printf("%s - Command not applied to switch.", host)
 			} else {
 				progress.connectedDevices = append(progress.connectedDevices, host)
@@ -189,6 +185,7 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 			break
 		}
 		if i == upperLimit {
+			progress.offlineDevices = append(progress.offlineDevices, host)
 			log.Printf("%s - No output received. Timed Out.", host)
 		}
 	}
@@ -202,7 +199,6 @@ func (cmd *CMD) dialClient(host string, config *ssh.ClientConfig) (*ssh.Client, 
 		if strings.Contains(err.Error(),
 			`connectex: A connection attempt failed because the connected party did not properly respond after a period of time`) ||
 			strings.Contains(err.Error(), `i/o timeout`) {
-			progress.unauthedDevices = append(progress.unauthedDevices, host)
 			return nil, fmt.Errorf("Unable to connect: SSH attempt Timed Out.")
 		}
 		//Confusing errors. If it's exhausted all authentication methods it's probably a bad password.
@@ -210,7 +206,6 @@ func (cmd *CMD) dialClient(host string, config *ssh.ClientConfig) (*ssh.Client, 
 		if strings.Contains(err.Error(), "unable to authenticate, attempted methods [none password]") {
 			return nil, fmt.Errorf("Unable to connect: Authentication Failed")
 		} else {
-			progress.unauthedDevices = append(progress.unauthedDevices, host)
 			return nil, fmt.Errorf("Unable to connect: %s", err)
 		}
 	}
@@ -247,6 +242,13 @@ var verboseOutput = flag.Bool("v", false, "Output all successfully connected dev
 var dontVerifyCreds = flag.Bool("c", false, "Doesn't verify your credentials against a known device. Be careful to not lock out your account.")
 var progress Progress
 
+// encryption key used to decrypt helper.yml
+// create 'helper.key' file to store appCode. Copy below code format for yml
+// helper:
+//
+//	key: 'fasdfasdfasdfasdf'
+var appCode string
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	// This sets certain flags for the "log" package, so when a log.Println
@@ -279,8 +281,8 @@ func main() {
 	}
 	fmt.Println("Received input, processing...")
 
-	waitGroup := goccm.New(200)
-	bar := pb.StartNew(len(deviceList)).SetTemplate(pb.Simple).SetRefreshRate(100 * time.Millisecond) //Default refresh rate is 200 Milliseconds.
+	waitGroup := goccm.New(25)
+	bar := pb.StartNew(len(deviceList)).SetTemplate(pb.Simple).SetRefreshRate(25 * time.Millisecond) //Default refresh rate is 200 Milliseconds.
 	for _, deviceIP := range deviceList {
 		waitGroup.Wait()
 		go func(host string) {
@@ -309,4 +311,6 @@ func main() {
 	} else {
 		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands: (%d) \"%s\" on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d)", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.failedCommands), strings.Join(progress.failedCommands, ","), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, ","), len(progress.connectedDevices))
 	}
+
+	prompt.List("\nPress enter to close....")
 }
