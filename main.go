@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"github.com/Rldeckard/aesGenerate32/authGen"
+	"github.com/Rldeckard/aesGenerate256/authGen"
 	"github.com/Rldeckard/sshRunCMD/closeHandler"
 	"github.com/Rldeckard/sshRunCMD/userPrompt"
 	"github.com/cheggaaa/pb/v3"
@@ -58,10 +58,10 @@ func (cmd *CMD) GetCredentialsFromFiles() bool {
 		log.Println(err)
 		return false
 	}
-	cmd.username = auth32.DecryptAES(appCode, viper.GetString("helper.username"))
-	cmd.password = auth32.DecryptAES(appCode, viper.GetString("helper.password"))
-	cmd.fallbackUser = auth32.DecryptAES(appCode, viper.GetString("helper.fallbackUser"))
-	cmd.fallbackPass = auth32.DecryptAES(appCode, viper.GetString("helper.fallbackPass"))
+	cmd.username = aes256.Decrypt(appCode, viper.GetString("helper.username"))
+	cmd.password = aes256.Decrypt(appCode, viper.GetString("helper.password"))
+	cmd.fallbackUser = aes256.Decrypt(appCode, viper.GetString("helper.fallbackUser"))
+	cmd.fallbackPass = aes256.Decrypt(appCode, viper.GetString("helper.fallbackPass"))
 	return true
 }
 func (cmd *CMD) initSSHConfig() *ssh.ClientConfig {
@@ -96,7 +96,7 @@ func (cmd *CMD) initSSHConfig() *ssh.ClientConfig {
 	return config
 }
 
-// SSHConnect : Run command against a host
+// Run command against a host
 func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 
 	config := cmd.initSSHConfig()
