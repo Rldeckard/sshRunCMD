@@ -1,24 +1,19 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
-	"crypto/aes"
-	"crypto/cipher"
-	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/Rldeckard/aesGenerate256/authGen"
+	"github.com/Rldeckard/sshRunCMD/closeHandler"
+	"github.com/Rldeckard/sshRunCMD/userPrompt"
 	"github.com/cheggaaa/pb/v3"
 	"github.com/go-ping/ping"
 	"github.com/spf13/viper"
 	"github.com/zenthangplus/goccm"
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/term"
 	"log"
-	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -31,12 +26,11 @@ type CMD struct {
 }
 
 type Progress struct {
-	offline         int
-	offlineDevices  []string
-	unauthed        int
-	unauthedDevices []string
-	online          int
-	onlineDevices   []string
+	offlineDevices        []string
+	unauthedDevices       []string
+	connectedDevices      []string
+	failedCommandsDevices []string
+	failedCommands        []string
 }
 
 // encryption key used to decrypt helper.yml
@@ -46,89 +40,7 @@ type Progress struct {
 //	key: 'fasdfasdfasdfasdf'
 var appCode string
 
-// passBall : This function is used to pass encrypted credentials.
-// Don't forget to update the appCode with a new 32 bit string per application.
-func passBall(ct string) string {
-	if ct == "" { //basically a catch for not providing alternate credentials
-		return ""
-	}
-	var plaintext []byte
-	ciphertext, _ := hex.DecodeString(ct)
-	c, err := aes.NewCipher([]byte(appCode))
-	if err != nil {
-		log.Fatal("Failed to import decryption key.")
-	}
-
-	gcm, err := cipher.NewGCM(c)
-	CheckError(err)
-
-	nonceSize := gcm.NonceSize()
-	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-
-	plaintext, err = gcm.Open(nil, []byte(nonce), []byte(ciphertext), nil)
-	if err != nil {
-		log.Fatal("Failed to decrypt text. Check encryption key or redo access encryption.")
-	}
-
-	return string(plaintext)
-}
-
-// CheckError : default error checker. Built in if statement.
-func CheckError(err error) {
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-// StringPrompt : Prompts for user input, and securely prompts for password if "Password:" is the given label.
-// Required for passwords as it's grabbing the Stdin and processing. Can't use ReadPassword standalone
-func StringPrompt(label string) string {
-	var s string
-	r := bufio.NewReader(os.Stdin)
-	_, err := fmt.Fprint(os.Stderr, fmt.Sprintf("%s ", label))
-	if err != nil {
-		log.Fatal(err)
-	}
-	if label == "Password:" {
-		bytePassword, _ := term.ReadPassword(int(syscall.Stdin))
-		s = string(bytePassword)
-	} else {
-		for {
-			s, _ = r.ReadString('\n')
-			if s != "" {
-				break
-			}
-		}
-	}
-	return strings.TrimSpace(s)
-}
-
-// promptList : Prompt for user input and return array of string. Each line is its own string.
-func promptList(promptString string) []string {
-	fmt.Println("\n" + promptString)
-	scanner := bufio.NewScanner(os.Stdin)
-
-	var lines []string
-	for {
-		scanner.Scan()
-		line := scanner.Text()
-
-		// break the loop if line is empty
-		if len(line) == 0 {
-			break
-		}
-		lines = append(lines, line)
-	}
-
-	err := scanner.Err()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return lines
-}
-
-// GetCredentialsFromFiles : reads username and password from config files and defines them inside the CMD type.
+// Reads username and password from config files and defines them inside the CMD type.
 func (cmd *CMD) GetCredentialsFromFiles() bool {
 	viper.AddConfigPath(".")
 	viper.SetConfigName("key") // Register config file name (no extension)
@@ -146,10 +58,10 @@ func (cmd *CMD) GetCredentialsFromFiles() bool {
 		log.Println(err)
 		return false
 	}
-	cmd.username = passBall(viper.GetString("helper.username"))
-	cmd.password = passBall(viper.GetString("helper.password"))
-	cmd.fallbackUser = passBall(viper.GetString("helper.fallbackUser"))
-	cmd.fallbackPass = passBall(viper.GetString("helper.fallbackPass"))
+	cmd.username = aes256.Decrypt(appCode, viper.GetString("helper.username"))
+	cmd.password = aes256.Decrypt(appCode, viper.GetString("helper.password"))
+	cmd.fallbackUser = aes256.Decrypt(appCode, viper.GetString("helper.fallbackUser"))
+	cmd.fallbackPass = aes256.Decrypt(appCode, viper.GetString("helper.fallbackPass"))
 	return true
 }
 func (cmd *CMD) initSSHConfig() *ssh.ClientConfig {
@@ -191,7 +103,7 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 
 	pinger, err := ping.NewPinger(host)
 	if err != nil {
-		fmt.Errorf("Pings not working: %s", err)
+		return fmt.Errorf("Pings not working: %s", err)
 	}
 	pinger.Count = viper.GetInt("blockTimer.pingCount")
 	pinger.SetPrivileged(true)
@@ -268,7 +180,11 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 			fmt.Printf("\n#####################  %s  #####################\n \n\n %s\n",
 				host, strings.TrimSpace(strings.Join(outputArray, "\n")))
 			if failedCommand == true {
+				progress.failedCommandsDevices = append(progress.failedCommandsDevices, host)
+				progress.failedCommands = append(progress.failedCommands, command)
 				log.Printf("%s - Command not applied to switch.", host)
+			} else {
+				progress.connectedDevices = append(progress.connectedDevices, host)
 			}
 			break
 		}
@@ -276,7 +192,6 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 			log.Printf("%s - No output received. Timed Out.", host)
 		}
 	}
-	progress.onlineDevices = append(progress.onlineDevices, host)
 	return nil
 }
 func (cmd *CMD) dialClient(host string, config *ssh.ClientConfig) (*ssh.Client, error) {
@@ -326,18 +241,6 @@ func processOutput(input []string) ([]string, bool) {
 
 }
 
-// SetupCloseHandler : Catch ^C and gracefully shutdown.
-func SetupCloseHandler() {
-	c := make(chan os.Signal)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-c
-		fmt.Println("\n- Ctrl+C pressed in Terminal. Gracefully shutting down.")
-		os.Exit(1)
-	}()
-	return
-}
-
 var originalOutput = flag.Bool("s", false, "Shows raw output from switches.")
 var testRun = flag.Bool("t", false, "Run preloaded test case for development. Defined in helper file.")
 var verboseOutput = flag.Bool("v", false, "Output all successfully connected devices.")
@@ -351,14 +254,14 @@ func main() {
 	// The log package contains many of the same functions as fmt.
 
 	flag.Parse()
-	SetupCloseHandler()
+	closeHandler.Listener()
 	var command CMD
 	var deviceList []string
 	var userScript []string
 	if !command.GetCredentialsFromFiles() || command.username == "" {
 		log.Println("Unable to read credentials from helper file.")
-		command.username = StringPrompt("Username:")
-		command.password = StringPrompt("Password:")
+		command.username = prompt.Credentials("Username:")
+		command.password = prompt.Credentials("Password:")
 	}
 	if !*dontVerifyCreds {
 		//checks credentials against a default device so you don't lock yourself out
@@ -368,8 +271,8 @@ func main() {
 		}
 	}
 	if *testRun == false {
-		deviceList = promptList("Enter Device List, Press Enter when completed.")
-		userScript = promptList("Enter commands to run, Press Enter when completed.")
+		deviceList = prompt.List("Enter Device List, Press Enter when completed.")
+		userScript = prompt.List("Enter commands to run, Press Enter when completed.")
 	} else {
 		deviceList = viper.GetStringSlice("tester.devices")
 		userScript = []string{viper.GetString("tester.commands")}
@@ -402,8 +305,8 @@ func main() {
 		time.Sleep(5 * time.Millisecond)
 	}
 	if *verboseOutput {
-		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully able to connect and run commands (%d) : %s", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.onlineDevices), strings.Join(progress.onlineDevices, ","))
+		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands: (%d) \"%s\" on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d) : %s", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.failedCommands), strings.Join(progress.failedCommands, ","), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, ","), len(progress.connectedDevices), strings.Join(progress.connectedDevices, ","))
 	} else {
-		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully able to connect and run commands (%d)", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.onlineDevices))
+		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands: (%d) \"%s\" on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d)", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.failedCommands), strings.Join(progress.failedCommands, ","), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, ","), len(progress.connectedDevices))
 	}
 }
