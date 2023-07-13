@@ -240,6 +240,7 @@ var originalOutput = flag.Bool("s", false, "Shows raw output from switches.")
 var testRun = flag.Bool("t", false, "Run preloaded test case for development. Defined in helper file.")
 var verboseOutput = flag.Bool("v", false, "Output all successfully connected devices.")
 var dontVerifyCreds = flag.Bool("c", false, "Doesn't verify your credentials against a known device. Be careful to not lock out your account.")
+var promptCreds = flag.Bool("p", false, "Bypasses all stored credentials and prompts for new credentials.")
 var progress Progress
 
 // encryption key used to decrypt helper.yml
@@ -260,8 +261,10 @@ func main() {
 	var command CMD
 	var deviceList []string
 	var userScript []string
-	if !command.GetCredentialsFromFiles() || command.username == "" {
-		log.Println("Unable to read credentials from helper file.")
+	if !command.GetCredentialsFromFiles() || command.username == "" || *promptCreds {
+		if !*promptCreds {
+			log.Println("Unable to read credentials from helper file.")
+		}
 		command.username = prompt.Credentials("Username:")
 		command.password = prompt.Credentials("Password:")
 	}
@@ -312,5 +315,5 @@ func main() {
 		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands: (%d) \"%s\" on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d)", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.failedCommands), strings.Join(progress.failedCommands, ","), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, ","), len(progress.connectedDevices))
 	}
 
-	prompt.List("\nPress enter to close....")
+	prompt.Pause()
 }
