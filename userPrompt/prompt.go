@@ -14,21 +14,12 @@ import (
 // Required for passwords as it's grabbing the Stdin and processing. Can't use ReadPassword standalone
 func Credentials(label string) string {
 	var s string
-	r := bufio.NewReader(os.Stdin)
-	_, err := fmt.Fprint(os.Stderr, fmt.Sprintf("%s ", label))
-	if err != nil {
-		log.Fatal(err)
-	}
+	fmt.Printf("%s ", label)
 	if label == "Password:" {
 		bytePassword, _ := term.ReadPassword(int(syscall.Stdin))
 		s = string(bytePassword)
 	} else {
-		for {
-			s, _ = r.ReadString('\n')
-			if s != "" {
-				break
-			}
-		}
+		fmt.Scan(&s)
 	}
 	return strings.TrimSpace(s)
 }
@@ -36,25 +27,24 @@ func Credentials(label string) string {
 // Prompt for user input and return an array of strings. Each line is its own string.
 // To exit the function do an empty return (hit enter on a new line).
 func List(label string) []string {
-	fmt.Println("\n" + label)
-	scanner := bufio.NewScanner(os.Stdin)
-
 	var lines []string
-	for {
-		scanner.Scan()
-		line := scanner.Text()
-		// break the loop if line is empty
-		if len(line) == 0 {
-			break
-		}
-		lines = append(lines, line)
+	r := bufio.NewReader(os.Stdin)
+	_, err := fmt.Fprint(os.Stderr, fmt.Sprintf("%s\n", label))
+	test, _ := r.ReadString('\n') //discards any newlines that could force an exit before processing user input.
+	if test != "\r\n" {           //collects legit enteries for when newReader is working properly
+		lines = append(lines, strings.Trim(test, "\r\n"))
 	}
-
-	err := scanner.Err()
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	for {
+		line, _ := r.ReadString('\n')
+		if line == "\r\n" {
+			break
+		}
+		lines = append(lines, strings.Trim(line, "\r\n"))
+	}
 	return lines
 }
 
@@ -65,7 +55,13 @@ func Scan(label string) string {
 	fmt.Print(label)
 
 	fmt.Scan(&userInput)
-
 	return userInput
 
+}
+
+// This functions whole job is to allow you to stop at the end of a program and digest the output before closing. Press Enter to continue...
+func Pause() {
+	r := bufio.NewReader(os.Stdin)
+	_, _ = fmt.Fprint(os.Stderr, "\n\nPress Enter to continue...")
+	_, _ = r.ReadString('\n')
 }
