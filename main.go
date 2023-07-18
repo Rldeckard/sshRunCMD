@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"log"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -91,7 +92,7 @@ func (cmd *CMD) initSSHConfig() *ssh.ClientConfig {
 
 // Run command against a host
 func (cmd *CMD) SSHConnect(userScript []string, host string) error {
-
+	var m sync.Mutex
 	config := cmd.initSSHConfig()
 	altCreds := ""
 	pinger, err := ping.NewPinger(host)
@@ -155,6 +156,7 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 	}
 
 	session.Shell()
+	m.Lock()
 	//can use multiple of these buffer writes in a row, but I just used 1 string.
 	// The command has been sent to the device, but you haven't gotten output back yet.
 	stdinBuf.Write([]byte("terminal length 0\n"))
@@ -186,6 +188,7 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 		outputLastLine := strings.TrimSpace(outputArray[len(outputArray)-1])
 
 		if len(outputArray) >= 3 && strings.HasSuffix(outputLastLine, "#") {
+			m.Unlock()
 			outputArray, failedCommand := processOutput(outputArray)
 			fmt.Printf("\n#####################  %s  #####################\n%s \n\n%s\n",
 				host, altCreds, strings.TrimSpace(strings.Join(outputArray, "\n")))
@@ -298,7 +301,7 @@ func main() {
 	}
 	fmt.Println("Received input, processing...")
 
-	waitGroup := goccm.New(25)
+	waitGroup := goccm.New(50)
 	bar := pb.StartNew(len(deviceList)).SetTemplate(pb.Simple).SetRefreshRate(25 * time.Millisecond) //Default refresh rate is 200 Milliseconds.
 	for _, deviceIP := range deviceList {
 		waitGroup.Wait()
@@ -311,7 +314,6 @@ func main() {
 			}
 		}(deviceIP)
 		//Keeps the output buffer from crossing streams in the go routine.
-		time.Sleep(30 * time.Millisecond)
 	}
 
 	//blocks until ALL go routines are done.
