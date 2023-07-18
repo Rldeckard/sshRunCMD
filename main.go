@@ -146,6 +146,7 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 	}
 
 	var stdoutBuf bytes.Buffer
+	configT := false
 	session.Stdout = &stdoutBuf
 
 	stdinBuf, err := session.StdinPipe()
@@ -154,19 +155,32 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 	}
 
 	session.Shell()
-	command := strings.Join(userScript, "\n")
 	//can use multiple of these buffer writes in a row, but I just used 1 string.
-	//stdinBuf.Write([]byte("config t \n"))
 	// The command has been sent to the device, but you haven't gotten output back yet.
+	stdinBuf.Write([]byte("terminal length 0\n"))
+	for _, command := range userScript {
+		if strings.Contains(command, "config t") {
+			configT = true
+		}
+		if command == "exit" {
+			configT = false
+		}
+		stdinBuf.Write([]byte(command + "\n"))
+		time.Sleep(5 * time.Millisecond) //TODO: Might not need, but this ensures commands are applied. Needs rigorous testing.
+	}
+	//makes sure you're at the lowest level before running terminal command or it won't work.
+	if configT {
+		stdinBuf.Write([]byte("end\n"))
+	}
+	stdinBuf.Write([]byte("terminal length 32\n"))
 	// Not that you can't send more commands immediately.
-	stdinBuf.Write([]byte("terminal length 0\n" + command + "\nterminal length 32\n"))
 	// Then you'll want to wait for the response, and watch the stdout buffer for output.
 	upperLimit := 30
 	for i := 1; i <= upperLimit; i++ {
 		if i > 10 {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(500 * time.Millisecond)
 		} else {
-			time.Sleep(40 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 		}
 		outputArray := strings.Split(strings.TrimSpace(stdoutBuf.String()), "\n")
 		outputLastLine := strings.TrimSpace(outputArray[len(outputArray)-1])
@@ -297,7 +311,7 @@ func main() {
 			}
 		}(deviceIP)
 		//Keeps the output buffer from crossing streams in the go routine.
-		time.Sleep(1 * time.Millisecond)
+		time.Sleep(30 * time.Millisecond)
 	}
 
 	//blocks until ALL go routines are done.
@@ -312,7 +326,7 @@ func main() {
 	if *verboseOutput {
 		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands: (%d) \"%s\" on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d) : %s", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.failedCommands), strings.Join(progress.failedCommands, ","), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, ","), len(progress.connectedDevices), strings.Join(progress.connectedDevices, ","))
 	} else {
-		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands: (%d) \"%s\" on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d)", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.failedCommands), strings.Join(progress.failedCommands, ","), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, ","), len(progress.connectedDevices))
+		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands: (%d) on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d)", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.failedCommands), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, ","), len(progress.connectedDevices))
 	}
 
 	prompt.Pause()
