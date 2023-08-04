@@ -12,15 +12,16 @@ import (
 
 	"github.com/Rldeckard/aesGenerate256/authGen"
 	"github.com/Rldeckard/sshRunCMD/closeHandler"
+	"github.com/Rldeckard/sshRunCMD/dialSSHClient"
+	"github.com/Rldeckard/sshRunCMD/processOutput"
 	"github.com/Rldeckard/sshRunCMD/userPrompt"
 	"github.com/cheggaaa/pb/v3"
-	"github.com/go-ping/ping"
 	"github.com/spf13/viper"
 	"github.com/zenthangplus/goccm"
 	"golang.org/x/crypto/ssh"
 )
 
-type CMD struct {
+type CRED struct {
 	username     string
 	password     string
 	fallbackUser string
@@ -37,7 +38,7 @@ type Progress struct {
 }
 
 // Reads username and password from config files and defines them inside the CMD type.
-func (cmd *CMD) GetCredentialsFromFiles() bool {
+func GetCredentialsFromFiles(cred *CRED) bool {
 	viper.AddConfigPath(".")
 	viper.SetConfigName("key") // Register config file name (no extension)
 	viper.SetConfigType("yml") // Look for specific type
@@ -54,72 +55,35 @@ func (cmd *CMD) GetCredentialsFromFiles() bool {
 		log.Println(err)
 		return false
 	}
-	cmd.username = aes256.Decrypt(appCode, viper.GetString("helper.username"))
-	cmd.password = aes256.Decrypt(appCode, viper.GetString("helper.password"))
-	cmd.fallbackUser = aes256.Decrypt(appCode, viper.GetString("helper.fallbackUser"))
-	cmd.fallbackPass = aes256.Decrypt(appCode, viper.GetString("helper.fallbackPass"))
+	cred.username = aes256.Decrypt(appCode, viper.GetString("helper.username"))
+	cred.password = aes256.Decrypt(appCode, viper.GetString("helper.password"))
+	cred.fallbackUser = aes256.Decrypt(appCode, viper.GetString("helper.fallbackUser"))
+	cred.fallbackPass = aes256.Decrypt(appCode, viper.GetString("helper.fallbackPass"))
 	return true
-}
-func (cmd *CMD) initSSHConfig() *ssh.ClientConfig {
-	config := &ssh.ClientConfig{
-		User:            cmd.username,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		//Might need to play with this. Default timeout is something insane like 10 seconds. I thought the program froze.
-		Timeout: 2 * time.Second,
-		/*
-			//not needed currently, but good code to keep
-			Config: ssh.Config{
-				Ciphers: []string{"aes128-ctr", "hmac-sha2-256"},
-			},
-		*/
-	}
-	// A public key may be used to authenticate against the remote
-	// server by using an unencrypted PEM-encoded private key file.
-	if cmd.privatekey != "" {
-		// Create the Signer for this private key.
-		signer, err := ssh.ParsePrivateKey([]byte(cmd.privatekey))
-		if err != nil {
-			log.Printf("unable to parse private key: %v", err)
-		}
-		config.Auth = []ssh.AuthMethod{
-			ssh.PublicKeys(signer),
-		}
-	} else {
-		config.Auth = []ssh.AuthMethod{
-			ssh.Password(cmd.password),
-		}
-	}
-	return config
 }
 
 // Run command against a host
-func (cmd *CMD) SSHConnect(userScript []string, host string) error {
+func (cred *CRED) SSHConnect(userScript []string, host string) error {
 	var m sync.Mutex
-	config := cmd.initSSHConfig()
+	connect.Init(cred.username, cred.password, "")
 	altCreds := ""
-	pinger, err := ping.NewPinger(host)
+
+	stats, err := connect.IsAlive(host, viper.GetInt("blockTimer.pingCount"), viper.GetInt("blockTimer.pingTimeout")) // get send/receive/rtt stats
 	if err != nil {
-		return fmt.Errorf("Pings not working: %s", err)
+		return err
 	}
-	pinger.Count = viper.GetInt("blockTimer.pingCount")
-	pinger.SetPrivileged(true)
-	pinger.Timeout = time.Duration(viper.GetInt("blockTimer.pingTimeout")) * time.Millisecond //times out after 500 milliseconds
-	pinger.Run()                                                                              // blocks until finished
-	stats := pinger.Statistics()                                                              // get send/receive/rtt stats
 	if stats.PacketsRecv == 0 {
 		//Device Timed out. No need to make a list of available iPs. Exit function.
 		progress.offlineDevices = append(progress.offlineDevices, host)
 		return fmt.Errorf("%s - Unable to connect: Device Offline.", host)
 	}
-	client, err := cmd.dialClient(host, config)
+	client, err := connect.DialClient(host)
 	if err != nil {
-		if cmd.fallbackUser != "" || strings.Contains("Authentication Failed", err.Error()) {
+		if cred.fallbackUser != "" || strings.Contains("Authentication Failed", err.Error()) {
 
-			config.User = cmd.fallbackUser
-			config.Auth = []ssh.AuthMethod{
-				ssh.Password(cmd.fallbackPass),
-			}
-			client, err = cmd.dialClient(host, config)
+			connect.UpdateUser(cred.fallbackUser)
+			connect.UpdatePass(cred.fallbackPass)
+			client, err = connect.DialClient(host)
 			if err != nil {
 				progress.unauthedDevices = append(progress.unauthedDevices, host)
 				return fmt.Errorf("%s - %s\n", host, err)
@@ -186,7 +150,7 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 		outputLastLine := strings.TrimSpace(outputArray[len(outputArray)-1])
 
 		if len(outputArray) >= 3 && strings.HasSuffix(outputLastLine, "#") {
-			outputArray, failedCommand := processOutput(outputArray)
+			outputArray, failedCommand := output.Process(outputArray, *originalOutput)
 			outputString := fmt.Sprintf("\n#####################  %s  #####################\n%s", host, altCreds)
 			if *fileOutput {
 				f, err := os.OpenFile("output.txt",
@@ -225,50 +189,6 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 	m.Unlock()
 	return nil
 }
-func (cmd *CMD) dialClient(host string, config *ssh.ClientConfig) (*ssh.Client, error) {
-	// Connect to the remote host
-	// Requires defined port number
-	client, err := ssh.Dial("tcp", host+":22", config)
-	if err != nil {
-		if strings.Contains(err.Error(),
-			`connectex: A connection attempt failed because the connected party did not properly respond after a period of time`) ||
-			strings.Contains(err.Error(), `i/o timeout`) {
-			return nil, fmt.Errorf("Unable to connect: SSH attempt Timed Out.")
-		}
-		//Confusing errors. If it's exhausted all authentication methods it's probably a bad password.
-		//We don't want to gather the progress here, because this error gets reused in the return.
-		if strings.Contains(err.Error(), "unable to authenticate, attempted methods [none password]") {
-			return nil, fmt.Errorf("Unable to connect: Authentication Failed")
-		} else {
-			return nil, fmt.Errorf("Unable to connect: %s", err)
-		}
-	}
-
-	return client, nil
-}
-
-// Removes the banners from the output array to make the code easier to digest.
-// Also looks for any errors in the execution.
-func processOutput(input []string) ([]string, bool) {
-	failedCommand := false
-	for index, bannerString := range input {
-		if *originalOutput == false {
-			if strings.Contains(bannerString, "-------------------------------") {
-				input[index-1] = ""
-				input[index] = ""
-				input[index+1] = ""
-			}
-			if strings.Contains(bannerString, "terminal length") {
-				input[index] = ""
-			}
-		}
-		if strings.Contains(bannerString, "% Invalid") {
-			failedCommand = true
-		}
-	}
-	return input, failedCommand
-
-}
 
 var originalOutput = flag.Bool("s", false, "Shows raw output from switches.")
 var testRun = flag.Bool("t", false, "Run preloaded test case for development. Defined in helper file.")
@@ -294,19 +214,20 @@ func main() {
 	flag.Parse()
 	closeHandler.Listener()
 	os.Remove("output.txt")
-	var command CMD
+	var cred CRED
 	var deviceList []string
 	var userScript []string
-	if !command.GetCredentialsFromFiles() || command.username == "" || *promptCreds {
+	if !GetCredentialsFromFiles(&cred) || cred.username == "" || *promptCreds {
 		if !*promptCreds {
 			log.Println("Unable to read credentials from helper file.")
 		}
-		command.username = prompt.Credentials("Username:")
-		command.password = prompt.Credentials("Password:")
+		cred.username = prompt.Credentials("Username:")
+		cred.password = prompt.Credentials("Password:")
 	}
 	if !*dontVerifyCreds {
 		//checks credentials against a default device so you don't lock yourself out
-		_, err := command.dialClient(viper.GetString("helper.core"), command.initSSHConfig())
+		connect.Init(cred.username, cred.password, "")
+		_, err := connect.DialClient(viper.GetString("helper.core"))
 		if err != nil {
 			log.Fatalf("Supplied Credentials not working.")
 		}
@@ -316,7 +237,7 @@ func main() {
 		userScript = prompt.List("Enter commands to run, Press Enter when completed.")
 	} else {
 		deviceList = viper.GetStringSlice("tester.devices")
-		userScript = []string{viper.GetString("tester.commands")}
+		userScript = []string{viper.GetString("tester.commands")} //only works for one command, but needs to be a slice to be processed. Possible conver to csv import if needed.
 	}
 	fmt.Println("Received input, processing...")
 
@@ -331,7 +252,7 @@ func main() {
 		go func(host string) {
 			defer bar.Increment()
 			defer waitGroup.Done()
-			err := command.SSHConnect(userScript, host)
+			err := cred.SSHConnect(userScript, host)
 			if err != nil {
 				log.Print(err)
 			}
