@@ -4,6 +4,12 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"log"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/Rldeckard/aesGenerate256/authGen"
 	"github.com/Rldeckard/sshRunCMD/closeHandler"
 	"github.com/Rldeckard/sshRunCMD/userPrompt"
@@ -12,10 +18,6 @@ import (
 	"github.com/spf13/viper"
 	"github.com/zenthangplus/goccm"
 	"golang.org/x/crypto/ssh"
-	"log"
-	"strings"
-	"sync"
-	"time"
 )
 
 type CMD struct {
@@ -63,7 +65,7 @@ func (cmd *CMD) initSSHConfig() *ssh.ClientConfig {
 		User:            cmd.username,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		//Might need to play with this. Default timeout is something insane like 10 seconds. I thought the program froze.
-		Timeout: 1 * time.Second,
+		Timeout: 2 * time.Second,
 		/*
 			//not needed currently, but good code to keep
 			Config: ssh.Config{
@@ -177,21 +179,30 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 	stdinBuf.Write([]byte("terminal length 32\n"))
 	// Not that you can't send more commands immediately.
 	// Then you'll want to wait for the response, and watch the stdout buffer for output.
-	upperLimit := 30
+	upperLimit := 10
 	for i := 1; i <= upperLimit; i++ {
-		if i > 10 {
-			time.Sleep(500 * time.Millisecond)
-		} else {
-			time.Sleep(100 * time.Millisecond)
-		}
+
 		outputArray := strings.Split(strings.TrimSpace(stdoutBuf.String()), "\n")
 		outputLastLine := strings.TrimSpace(outputArray[len(outputArray)-1])
 
 		if len(outputArray) >= 3 && strings.HasSuffix(outputLastLine, "#") {
-			m.Unlock()
 			outputArray, failedCommand := processOutput(outputArray)
-			fmt.Printf("\n#####################  %s  #####################\n%s \n\n%s\n",
-				host, altCreds, strings.TrimSpace(strings.Join(outputArray, "\n")))
+			outputString := fmt.Sprintf("\n#####################  %s  #####################\n%s", host, altCreds)
+			if *fileOutput {
+				f, err := os.OpenFile("output.txt",
+					os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+				if err != nil {
+					log.Fatal("Please close output.txt before running program")
+				}
+				defer f.Close()
+
+				_, err = f.WriteString(fmt.Sprintf("%s\n\n%s\n", outputString, strings.TrimSpace(strings.Join(outputArray, ""))))
+				if err != nil {
+					log.Println("Issue writing to file.")
+				}
+			} else {
+				fmt.Printf(fmt.Sprintf("%s\n\n%s\n", outputString, strings.TrimSpace(strings.Join(outputArray, "\n"))))
+			}
 			if failedCommand == true {
 				progress.failedCommandsDevices = append(progress.failedCommandsDevices, host)
 				progress.failedCommands = append(progress.failedCommands, strings.Join(userScript, ","))
@@ -205,7 +216,13 @@ func (cmd *CMD) SSHConnect(userScript []string, host string) error {
 			progress.offlineDevices = append(progress.offlineDevices, host)
 			log.Printf("%s - No output received. Timed Out.", host)
 		}
+		if i > 5 {
+			time.Sleep(500 * time.Millisecond)
+		} else {
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
+	m.Unlock()
 	return nil
 }
 func (cmd *CMD) dialClient(host string, config *ssh.ClientConfig) (*ssh.Client, error) {
@@ -258,6 +275,7 @@ var testRun = flag.Bool("t", false, "Run preloaded test case for development. De
 var verboseOutput = flag.Bool("v", false, "Output all successfully connected devices.")
 var dontVerifyCreds = flag.Bool("c", false, "Doesn't verify your credentials against a known device. Be careful to not lock out your account.")
 var promptCreds = flag.Bool("p", false, "Bypasses all stored credentials and prompts for new credentials.")
+var fileOutput = flag.Bool("f", false, "Sends output from switches to file. Good for show runs or cdp neighbor.")
 var progress Progress
 
 // encryption key used to decrypt helper.yml
@@ -275,6 +293,7 @@ func main() {
 
 	flag.Parse()
 	closeHandler.Listener()
+	os.Remove("output.txt")
 	var command CMD
 	var deviceList []string
 	var userScript []string
@@ -301,8 +320,12 @@ func main() {
 	}
 	fmt.Println("Received input, processing...")
 
-	waitGroup := goccm.New(50)
+	waitGroup := goccm.New(40)
 	bar := pb.StartNew(len(deviceList)).SetTemplate(pb.Simple).SetRefreshRate(25 * time.Millisecond) //Default refresh rate is 200 Milliseconds.
+	checkList := strings.Split(deviceList[0], " ")
+	if len(checkList) > 1 {
+		deviceList = checkList
+	}
 	for _, deviceIP := range deviceList {
 		waitGroup.Wait()
 		go func(host string) {
@@ -326,9 +349,9 @@ func main() {
 		time.Sleep(5 * time.Millisecond)
 	}
 	if *verboseOutput {
-		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands: (%d) \"%s\" on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d) : %s", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.failedCommands), strings.Join(progress.failedCommands, ","), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, ","), len(progress.connectedDevices), strings.Join(progress.connectedDevices, ","))
+		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands: (%d) \"%s\" on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d) : %s", len(progress.offlineDevices), strings.Join(progress.offlineDevices, " "), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, " "), len(progress.failedCommands), strings.Join(progress.failedCommands, " "), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, " "), len(progress.connectedDevices), strings.Join(progress.connectedDevices, " "))
 	} else {
-		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands: (%d) on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d)", len(progress.offlineDevices), strings.Join(progress.offlineDevices, ","), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, ","), len(progress.failedCommands), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, ","), len(progress.connectedDevices))
+		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands: (%d) on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d)", len(progress.offlineDevices), strings.Join(progress.offlineDevices, " "), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, " "), len(progress.failedCommands), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, " "), len(progress.connectedDevices))
 	}
 
 	prompt.Pause()
