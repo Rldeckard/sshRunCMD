@@ -93,7 +93,9 @@ func UpdateKey(privatekey string) {
 	}
 }
 func IsAlive(host string, count int, timeout int) (*ping.Statistics, error) {
-
+	if host == "" {
+		return nil, fmt.Errorf("IP Address cannot be empty")
+	}
 	pinger, err := ping.NewPinger(host)
 	if err != nil {
 		return nil, fmt.Errorf("Pings not working: %s", err)

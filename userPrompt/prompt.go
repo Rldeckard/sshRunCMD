@@ -3,11 +3,12 @@ package prompt
 import (
 	"bufio"
 	"fmt"
-	"golang.org/x/term"
 	"log"
 	"os"
 	"strings"
 	"syscall"
+
+	"golang.org/x/term"
 )
 
 // Prompts for user input, and securely prompts for password if "Password:" is the given label.
@@ -39,7 +40,33 @@ func List(label string) []string {
 	}
 
 	for {
+		/*
+			- This code could potentially output a warning if idle too long on the console, but currently overrides user actions and no need.
+			stores cursor postion from terminal for later use
+			tput.Sc(os.Stdout)
+			quit := make(chan bool)
+			go func() {
+				time.Sleep(3 * time.Second)
+				select {
+				case <-quit:
+					close(quit)
+					quit = nil
+					return
+				default:
+					close(quit)
+					quit = nil
+					fmt.Print("                              Press [Enter] to continue")
+					//restores cursor positon to beginning
+					tput.Rc(os.Stdout)
+					return
+				}
+			}()
+					if quit != nil {
+				quit <- true
+			}
+		*/
 		line, _ := r.ReadString('\n')
+
 		if line == "\r\n" {
 			break
 		}
