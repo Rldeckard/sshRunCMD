@@ -10,15 +10,25 @@ import (
 	"sync"
 	"time"
 
+	"image/color"
+
 	"github.com/Rldeckard/aesGenerate256/authGen"
 	"github.com/Rldeckard/sshRunCMD/closeHandler"
 	"github.com/Rldeckard/sshRunCMD/dialSSHClient"
 	"github.com/Rldeckard/sshRunCMD/processOutput"
 	"github.com/Rldeckard/sshRunCMD/userPrompt"
-	"github.com/cheggaaa/pb/v3"
+	//"github.com/cheggaaa/pb/v3"
 	"github.com/spf13/viper"
 	"github.com/zenthangplus/goccm"
 	"golang.org/x/crypto/ssh"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/widget"
 )
 
 type CRED struct {
@@ -113,7 +123,9 @@ func (cred *CRED) SSHConnect(userScript []string, host string) error {
 	}
 
 	var stdoutBuf bytes.Buffer
-	configT := false
+	var configT bool = false
+	var outputFinished bool = false
+	var outputArray []string
 	session.Stdout = &stdoutBuf
 
 	stdinBuf, err := session.StdinPipe()
@@ -123,71 +135,291 @@ func (cred *CRED) SSHConnect(userScript []string, host string) error {
 
 	session.Shell()
 	m.Lock()
-	//can use multiple of these buffer writes in a row, but I just used 1 string.
 	// The command has been sent to the device, but you haven't gotten output back yet.
 	stdinBuf.Write([]byte("terminal length 0\n"))
 	for _, command := range userScript {
 		if strings.Contains(command, "config t") {
 			configT = true
 		}
-		if command == "exit" {
+		if command == "exit" || command == "end" {
 			configT = false
 		}
 		stdinBuf.Write([]byte(command + "\n"))
-		time.Sleep(5 * time.Millisecond) //TODO: Might not need, but this ensures commands are applied. Needs rigorous testing.
+		time.Sleep(20 * time.Millisecond) //TODO: Might not need, but this ensures commands are applied. Needs rigorous testing.
 	}
 	//makes sure you're at the lowest level before running terminal command or it won't work.
 	if configT {
 		stdinBuf.Write([]byte("end\n"))
 	}
 	stdinBuf.Write([]byte("terminal length 32\n"))
-	// Not that you can't send more commands immediately.
 	// Then you'll want to wait for the response, and watch the stdout buffer for output.
-	upperLimit := 10
-	for i := 1; i <= upperLimit; i++ {
+	const upperLimit uint8 = 30
+	for i := uint8(1); i <= upperLimit; i++ {
 
-		outputArray := strings.Split(strings.TrimSpace(stdoutBuf.String()), "\n")
+		outputArray = strings.Split(strings.TrimSpace(stdoutBuf.String()), "\n")
 		outputLastLine := strings.TrimSpace(outputArray[len(outputArray)-1])
 
 		if len(outputArray) >= 3 && strings.HasSuffix(outputLastLine, "#") {
-			outputArray, failedCommand := output.Process(outputArray, *originalOutput)
-			outputString := fmt.Sprintf("\n#####################  %s  #####################\n%s", host, altCreds)
-			if *fileOutput {
-				f, err := os.OpenFile("output.txt",
-					os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-				if err != nil {
-					log.Fatal("Please close output.txt before running program")
-				}
-				defer f.Close()
-
-				_, err = f.WriteString(fmt.Sprintf("%s\n\n%s\n", outputString, strings.TrimSpace(strings.Join(outputArray, ""))))
-				if err != nil {
-					log.Println("Issue writing to file.")
-				}
-			} else {
-				fmt.Printf(fmt.Sprintf("%s\n\n%s\n", outputString, strings.TrimSpace(strings.Join(outputArray, "\n"))))
-			}
-			if failedCommand == true {
-				progress.failedCommandsDevices = append(progress.failedCommandsDevices, host)
-				progress.failedCommands = append(progress.failedCommands, strings.Join(userScript, ","))
-				log.Printf("%s - Command not applied to switch.", host)
-			} else {
-				progress.connectedDevices = append(progress.connectedDevices, host)
-			}
+			outputFinished = true
 			break
 		}
 		if i == upperLimit {
-			progress.offlineDevices = append(progress.offlineDevices, host)
-			log.Printf("%s - No output received. Timed Out.", host)
+			outputFinished = false
 		}
-		if i > 5 {
+		if i > upperLimit/2 {
 			time.Sleep(500 * time.Millisecond)
 		} else {
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
+
+	outputArray, failedCommand := output.Process(outputArray, *originalOutput)
+	outputString := fmt.Sprintf("\n#####################  %s  #####################\n%s", host, altCreds)
+	if outputFinished == false {
+		outputString = outputString + "\nWARNING: Incomplete Output"
+	}
+	if *fileOutput {
+		f, err := os.OpenFile("output.txt",
+			os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			log.Fatal("Please close output.txt before running program")
+		}
+		defer f.Close()
+		//file output automatically adds a new line. No new line needed when converting outputArray to string
+		_, err = f.WriteString(fmt.Sprintf("%s\n\n%s\n", outputString, strings.TrimSpace(strings.Join(outputArray, ""))))
+		if err != nil {
+			log.Println("Issue writing to file.")
+		}
+	} else if *showGUI {
+		outputCMD.Text = fmt.Sprintf("%s\n\n%s\n", outputString, strings.TrimSpace(strings.Join(outputArray, "\n"))) + outputCMD.Text
+		outputCMD.Refresh()
+
+	} else {
+		//Newline needed when outputting to console for output array join.
+		fmt.Printf(fmt.Sprintf("%s\n\n%s\n", outputString, strings.TrimSpace(strings.Join(outputArray, "\n"))))
+	}
+	if failedCommand == true {
+		progress.failedCommandsDevices = append(progress.failedCommandsDevices, host)
+		progress.failedCommands = append(progress.failedCommands, strings.Join(userScript, ","))
+		log.Printf("%s - Command not applied to switch.", host)
+	} else {
+		progress.connectedDevices = append(progress.connectedDevices, host)
+	}
 	m.Unlock()
 	return nil
+}
+
+func errorPopUp(errString string) {
+	popupTitle := canvas.NewText("Error", color.White)
+
+	popupTitle.TextSize = 20
+	var modal *widget.PopUp
+
+	popupButton := widget.NewButton("Close", func() { modal.Hide() })
+	modal = widget.NewModalPopUp(
+		container.NewVBox(
+			popupTitle,
+			canvas.NewText(errString, color.White),
+			popupButton,
+		),
+		myWindow.Canvas(),
+	)
+	modal.Resize(fyne.NewSize(400, 0))
+	modal.Show()
+}
+
+func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry) { // optional, handle form submission
+	//clear output for subsequent runs
+	if !*dontVerifyCreds {
+		//checks credentials against a default device so you don't lock yourself out
+		connect.Init(cred.username, cred.password, "")
+		_, err := connect.DialClient(viper.GetString("helper.core"))
+		if err != nil {
+			dialogError := dialog.NewError(err, myWindow)
+			//"Supplied Credentials not working."
+			dialogError.Show()
+			return
+		}
+	}
+	outputCMD.Text = ""
+	waitGroup := goccm.New(40)
+	deviceSlice := strings.Split(deviceList.Text, "\n")
+	userScriptSlice := strings.Split(userScript.Text, "\n")
+	outputCMD.Text = "\nApplication Started....\n"
+	outputCMD.Refresh()
+	for _, deviceIP := range deviceSlice {
+		waitGroup.Wait()
+		go func(host string) {
+			defer waitGroup.Done()
+			err := cred.SSHConnect(userScriptSlice, strings.TrimSpace(host))
+			if err != nil {
+				log.Print(err)
+			}
+		}(deviceIP)
+	}
+	waitGroup.WaitAllDone()
+	showResults()
+
+}
+
+func (cred *CRED) guiApp() {
+	myApp := app.New()
+	myWindow = myApp.NewWindow("sshRunCMD")
+	myWindow.Resize(fyne.NewSize(1050, 0))
+	// Main menu
+	fileMenu := fyne.NewMenu("File",
+		fyne.NewMenuItem("Quit", func() { myApp.Quit() }),
+	)
+
+	helpMenu := fyne.NewMenu("Help",
+		fyne.NewMenuItem("About", func() {
+			dialog.ShowCustom("About", "Close", container.NewVBox(
+				widget.NewLabel("Welcome to sshRunCMD, a simple CLI application for managing switches."),
+				widget.NewLabel("Version: v1.3"),
+				widget.NewLabel("Author: Ryan Deckard"),
+			), myWindow)
+		}))
+	mainMenu := fyne.NewMainMenu(
+		fileMenu,
+		helpMenu,
+	)
+	myWindow.SetMainMenu(mainMenu)
+	outTitle := widget.NewLabel("Switch Output")
+	outTitle.TextStyle.Bold = true
+	outTitle.Alignment = fyne.TextAlignCenter
+
+	outputScroll := container.NewVScroll(outputCMD)
+	outputCMD.Wrapping = fyne.TextWrapWord //outputScroll.ScrollToBottom()
+
+	deviceList := widget.NewMultiLineEntry()
+	userScript := widget.NewMultiLineEntry()
+	deviceList.SetMinRowsVisible(10)
+	userScript.SetMinRowsVisible(10)
+
+	submitButton := widget.NewButton(
+		"Run CMD", func() { cred.runProgram(deviceList, userScript) },
+	)
+	submitButton.Importance = widget.HighImportance
+	testButton := widget.NewButton(
+		//premade test to run against network to verify applicaton functionality
+		"Test Run", func() {
+			surePopup := dialog.NewConfirm("Please confirm", "Run test script?", func(ok bool) {
+				if ok {
+					procDeviceList := viper.GetStringSlice("tester.devices")
+					deviceList.Text = strings.Join(procDeviceList, "\n")
+					procUserScript := viper.GetString("tester.commands")
+					userScript.Text = procUserScript
+					if len(procDeviceList) == 0 || len(procUserScript) == 0 {
+						dialog.NewCustom("Error", "Close", widget.NewLabel("Test not found. Please add test case to helper file and restart."), myWindow).Show()
+						deviceList.Text = ""
+						userScript.Text = ""
+						return
+					}
+					deviceList.Refresh()
+					userScript.Refresh()
+					cred.runProgram(deviceList, userScript)
+				}
+			}, myWindow)
+			surePopup.Show()
+		},
+	)
+	exportButton := widget.NewButton(
+		"Export", func() {
+			dialog.NewCustom("Oops", "Close", widget.NewLabel("Button not created yet"), myWindow).Show()
+			return
+		},
+	)
+
+	ipBox := container.New(
+		layout.NewVBoxLayout(),
+		widget.NewLabel("IP Addresses"),
+		deviceList,
+	)
+	cmdBox := container.New(
+		layout.NewVBoxLayout(),
+		widget.NewLabel("Commands"),
+		userScript,
+		submitButton,
+	)
+	buttonBox := container.New(
+		layout.NewHBoxLayout(),
+		testButton,
+		exportButton,
+	)
+	left := container.New(
+		layout.NewVBoxLayout(),
+		ipBox,
+		buttonBox,
+		cmdBox,
+	)
+	right := container.NewBorder(
+		outTitle,
+		nil,
+		nil,
+		nil,
+		outputScroll,
+	)
+	right.Resize(fyne.NewSize(400, 400))
+	content := container.New(
+		layout.NewGridLayout(2),
+		left,
+		right,
+	)
+	// Display our content
+	myWindow.SetContent(content)
+	// Close the App when Escape key is pressed
+	myWindow.Canvas().SetOnTypedKey(func(keyEvent *fyne.KeyEvent) {
+
+		if keyEvent.Name == fyne.KeyEscape {
+			myApp.Quit()
+		}
+	})
+
+	// Show window and run app
+	myWindow.ShowAndRun()
+}
+
+func showResults() {
+	var deviceResults string
+	if *verboseOutput {
+		deviceResults = fmt.Sprintf("\nStatus report: "+
+			"\n\tOffline devices (%d) : %s\n"+
+			"\tOnline but unable to authenticate with given credentials (%d) : %s\n"+
+			"\tSuccessfully connected, but unable to run commands: (%d) \"%s\" on (%d) devices : %s\n"+
+			"\tSuccessfully able to connect and run commands (%d) : %s\n",
+			len(progress.offlineDevices),
+			strings.Join(progress.offlineDevices, " "),
+			len(progress.unauthedDevices),
+			strings.Join(progress.unauthedDevices, " "),
+			len(progress.failedCommands),
+			strings.Join(progress.failedCommands, " "),
+			len(progress.failedCommandsDevices),
+			strings.Join(progress.failedCommandsDevices, " "),
+			len(progress.connectedDevices),
+			strings.Join(progress.connectedDevices, " "),
+		)
+	} else {
+		deviceResults = fmt.Sprintf("\nStatus report: \n"+
+			"\tOffline devices (%v) : %v\n"+
+			"\tOnline but unable to authenticate with given credentials (%v) : %v\n"+
+			"\tSuccessfully connected, but unable to run commands: (%v) on (%v) devices : %v\n"+
+			"\tSuccessfully able to connect and run commands (%v)\n",
+			len(progress.offlineDevices),
+			strings.Join(progress.offlineDevices, " "),
+			len(progress.unauthedDevices),
+			strings.Join(progress.unauthedDevices, " "),
+			len(progress.failedCommands),
+			len(progress.failedCommandsDevices),
+			strings.Join(progress.failedCommandsDevices, " "),
+			len(progress.connectedDevices),
+		)
+	}
+	if *showGUI {
+		outputCMD.Text = deviceResults + outputCMD.Text
+		outputCMD.Refresh()
+	} else {
+		fmt.Println(deviceResults)
+	}
 }
 
 var originalOutput = flag.Bool("s", false, "Shows raw output from switches.")
@@ -196,7 +428,10 @@ var verboseOutput = flag.Bool("v", false, "Output all successfully connected dev
 var dontVerifyCreds = flag.Bool("c", false, "Doesn't verify your credentials against a known device. Be careful to not lock out your account.")
 var promptCreds = flag.Bool("p", false, "Bypasses all stored credentials and prompts for new credentials.")
 var fileOutput = flag.Bool("f", false, "Sends output from switches to file. Good for show runs or cdp neighbor.")
+var showGUI = flag.Bool("g", true, "Uses new GUI design instead of CLI.")
 var progress Progress
+var outputCMD = widget.NewLabel("")
+var myWindow fyne.Window
 
 // encryption key used to decrypt helper.yml
 // create 'helper.key' file to store appCode. Copy below code format for yml
@@ -217,63 +452,63 @@ func main() {
 	var cred CRED
 	var deviceList []string
 	var userScript []string
+	fmt.Println(cred.username)
+
 	if !GetCredentialsFromFiles(&cred) || cred.username == "" || *promptCreds {
 		if !*promptCreds {
 			log.Println("Unable to read credentials from helper file.")
 		}
-		cred.username = prompt.Credentials("Username:")
-		cred.password = prompt.Credentials("Password:")
-	}
-	if !*dontVerifyCreds {
-		//checks credentials against a default device so you don't lock yourself out
-		connect.Init(cred.username, cred.password, "")
-		_, err := connect.DialClient(viper.GetString("helper.core"))
-		if err != nil {
-			log.Fatalf("Supplied Credentials not working.")
+		if *showGUI {
+			errorPopUp("Unable to read credentials from helper file.")
+		} else {
+			cred.username = prompt.Credentials("Username:")
+			cred.password = prompt.Credentials("Password:")
 		}
 	}
-	if *testRun == false {
-		deviceList = prompt.List("Enter Device List, Press Enter when completed.")
-		userScript = prompt.List("Enter commands to run, Press Enter when completed.")
-	} else {
-		deviceList = viper.GetStringSlice("tester.devices")
-		userScript = []string{viper.GetString("tester.commands")} //only works for one command, but needs to be a slice to be processed. Possible conver to csv import if needed.
-	}
-	fmt.Println("Received input, processing...")
-
-	waitGroup := goccm.New(40)
-	bar := pb.StartNew(len(deviceList)).SetTemplate(pb.Simple).SetRefreshRate(25 * time.Millisecond) //Default refresh rate is 200 Milliseconds.
-	checkList := strings.Split(deviceList[0], " ")
-	if len(checkList) > 1 {
-		deviceList = checkList
-	}
-	for _, deviceIP := range deviceList {
-		waitGroup.Wait()
-		go func(host string) {
-			defer bar.Increment()
-			defer waitGroup.Done()
-			err := cred.SSHConnect(userScript, host)
-			if err != nil {
-				log.Print(err)
-			}
-		}(deviceIP)
-		//Keeps the output buffer from crossing streams in the go routine.
+	if *showGUI {
+		cred.guiApp()
 	}
 
-	//blocks until ALL go routines are done.
-	waitGroup.WaitAllDone()
-	for i := 0; i <= 50; i++ {
-		if bar.Current() == int64(len(deviceList)) {
-			bar.Finish()
-			break
+	if *showGUI == false {
+		if *testRun == false {
+			deviceList = prompt.List("Enter Device List, Press Enter when completed.")
+			userScript = prompt.List("Enter commands to run, Press Enter when completed.")
+		} else {
+			deviceList = viper.GetStringSlice("tester.devices")
+			userScript = strings.Split(viper.GetString("tester.commands"), ",") //only works for one command, but needs to be a slice to be processed. Possible convert to csv import if needed.
 		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if *verboseOutput {
-		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands: (%d) \"%s\" on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d) : %s", len(progress.offlineDevices), strings.Join(progress.offlineDevices, " "), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, " "), len(progress.failedCommands), strings.Join(progress.failedCommands, " "), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, " "), len(progress.connectedDevices), strings.Join(progress.connectedDevices, " "))
-	} else {
-		fmt.Printf("\nStatus report: \n\tOffline devices (%d) : %s\n\tOnline but unable to authenticate with given credentials (%d) : %s\n\tSuccessfully connected, but unable to run commands: (%d) on (%d) devices : %s\n\tSuccessfully able to connect and run commands (%d)", len(progress.offlineDevices), strings.Join(progress.offlineDevices, " "), len(progress.unauthedDevices), strings.Join(progress.unauthedDevices, " "), len(progress.failedCommands), len(progress.failedCommandsDevices), strings.Join(progress.failedCommandsDevices, " "), len(progress.connectedDevices))
+		fmt.Println("Received input, processing...")
+		waitGroup := goccm.New(40)
+		checkList := strings.Split(deviceList[0], " ")
+		if len(checkList) > 1 {
+			deviceList = checkList
+		}
+		//bar := pb.StartNew(len(deviceList)).SetTemplate(pb.Simple).SetRefreshRate(25 * time.Millisecond) //Default refresh rate is 200 Milliseconds.
+
+		for _, deviceIP := range deviceList {
+			waitGroup.Wait()
+			go func(host string) {
+				//defer bar.Increment()
+				defer waitGroup.Done()
+				err := cred.SSHConnect(userScript, host)
+				if err != nil {
+					log.Print(err)
+				}
+			}(deviceIP)
+		}
+
+		//blocks until ALL go routines are done.
+		waitGroup.WaitAllDone()
+		/*
+			for i := uint8(0); i <= 50; i++ {
+				if bar.Current() == int64(len(deviceList)) {
+					bar.Finish()
+					break
+				}
+				time.Sleep(5 * time.Millisecond)
+			}*/
+		showResults()
+		prompt.Pause()
 	}
 
-	prompt.Pause()
 }
