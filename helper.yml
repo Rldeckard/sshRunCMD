@@ -1,0 +1,19 @@
+helper:
+  #Primary credential keys for logging into your devices. Typically active directory based. Needs to be encrypted with program key.
+  username: 
+  password: 
+  #Backup credentials in case AD isn't configured on a subset of devices. Usually an account on the local database of most switches.
+  fallbackUser:
+  fallbackPass:
+  #Specify a known local device you can ssh into to verify Active Directory credentials. An easy answer here is a router core or a persistent edge device.
+  core: ""
+
+#A specific set of timers set throughout the program based on behavior. Lower values = faster run. Higher values = less errors. Network latency could affect these numbers.
+blockTimer:
+  pingCount: 3
+  pingTimeout: 500
+
+#A network specific test to make sure your application is working. Can also be used to preload a standard query.
+tester:
+  devices: "10.0.0.1 10.0.0.2 10.0.0.3"
+  commands: "show clock" 
