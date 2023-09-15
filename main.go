@@ -4,27 +4,23 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"github.com/Rldeckard/aesGenerate256/authGen"
+	"github.com/Rldeckard/sshRunCMD/closeHandler"
+	"github.com/Rldeckard/sshRunCMD/dialSSHClient"
+	"github.com/Rldeckard/sshRunCMD/processOutput"
+	"github.com/Rldeckard/sshRunCMD/userPrompt"
+	"github.com/cheggaaa/pb/v3"
+	"github.com/spf13/viper"
+	"github.com/zenthangplus/goccm"
+	"golang.org/x/crypto/ssh"
 	"log"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"image/color"
-
-	"github.com/Rldeckard/aesGenerate256/authGen"
-	"github.com/Rldeckard/sshRunCMD/closeHandler"
-	"github.com/Rldeckard/sshRunCMD/dialSSHClient"
-	"github.com/Rldeckard/sshRunCMD/processOutput"
-	"github.com/Rldeckard/sshRunCMD/userPrompt"
-	//"github.com/cheggaaa/pb/v3"
-	"github.com/spf13/viper"
-	"github.com/zenthangplus/goccm"
-	"golang.org/x/crypto/ssh"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
@@ -209,25 +205,6 @@ func (cred *CRED) SSHConnect(userScript []string, host string) error {
 	return nil
 }
 
-func errorPopUp(errString string) {
-	popupTitle := canvas.NewText("Error", color.White)
-
-	popupTitle.TextSize = 20
-	var modal *widget.PopUp
-
-	popupButton := widget.NewButton("Close", func() { modal.Hide() })
-	modal = widget.NewModalPopUp(
-		container.NewVBox(
-			popupTitle,
-			canvas.NewText(errString, color.White),
-			popupButton,
-		),
-		myWindow.Canvas(),
-	)
-	modal.Resize(fyne.NewSize(400, 0))
-	modal.Show()
-}
-
 func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry) { // optional, handle form submission
 	//clear output for subsequent runs
 	if !*dontVerifyCreds {
@@ -235,7 +212,12 @@ func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry)
 		connect.Init(cred.username, cred.password, "")
 		_, err := connect.DialClient(viper.GetString("helper.core"))
 		if err != nil {
-			dialogError := dialog.NewError(err, myWindow)
+			var dialogError dialog.Dialog
+			if strings.Contains(err.Error(), "SSH attempt Timed Out") {
+				dialogError = dialog.NewCustom("Error", "Close", widget.NewLabel("Can't connect to Core Device."), myWindow)
+			} else {
+				dialogError = dialog.NewError(err, myWindow)
+			}
 			//"Supplied Credentials not working."
 			dialogError.Show()
 			return
@@ -325,7 +307,27 @@ func (cred *CRED) guiApp() {
 	)
 	exportButton := widget.NewButton(
 		"Export", func() {
-			dialog.NewCustom("Oops", "Close", widget.NewLabel("Button not created yet"), myWindow).Show()
+			if outputCMD.Text == "" {
+				dialog.NewCustom("Oops", "Close", widget.NewLabel("No results to export. Please run query before exporting."), myWindow).Show()
+			} else {
+				timeRaw := time.Now()
+				userHome, _ := os.UserHomeDir()
+				fileName := fmt.Sprintf("sshRunCMD-Export_%s.txt", timeRaw.Format("150405"))
+				f, err := os.OpenFile(
+					fmt.Sprintf(`%s\Downloads\%s`, userHome, fileName),
+					os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644,
+				)
+				if err != nil {
+					dialog.NewError(err, myWindow)
+				}
+				defer f.Close()
+				//file output automatically adds a new line. No new line needed when converting outputArray to string
+				_, err = f.WriteString(outputCMD.Text)
+				if err != nil {
+					log.Println("Issue writing to file.")
+				}
+				dialog.NewCustom("Export Complete", "Ok", widget.NewLabel("Export sent to Downloads Folder."), myWindow).Show()
+			}
 			return
 		},
 	)
@@ -428,7 +430,10 @@ var verboseOutput = flag.Bool("v", false, "Output all successfully connected dev
 var dontVerifyCreds = flag.Bool("c", false, "Doesn't verify your credentials against a known device. Be careful to not lock out your account.")
 var promptCreds = flag.Bool("p", false, "Bypasses all stored credentials and prompts for new credentials.")
 var fileOutput = flag.Bool("f", false, "Sends output from switches to file. Good for show runs or cdp neighbor.")
-var showGUI = flag.Bool("g", true, "Uses new GUI design instead of CLI.")
+
+// -g=false to call flag
+var showGUI = flag.Bool("g", true, "Disables GUI. Ex. -g=false")
+var helpCalled = flag.Bool("h", false, "Shows Usage Menu.")
 var progress Progress
 var outputCMD = widget.NewLabel("")
 var myWindow fyne.Window
@@ -452,14 +457,16 @@ func main() {
 	var cred CRED
 	var deviceList []string
 	var userScript []string
-	fmt.Println(cred.username)
-
+	if *helpCalled {
+		flag.PrintDefaults()
+		os.Exit(0)
+	}
 	if !GetCredentialsFromFiles(&cred) || cred.username == "" || *promptCreds {
 		if !*promptCreds {
 			log.Println("Unable to read credentials from helper file.")
 		}
 		if *showGUI {
-			errorPopUp("Unable to read credentials from helper file.")
+			dialog.NewCustom("Error", "Close", widget.NewLabel("Unable to read credentials from helper file.\nCheck Helper File."), myWindow)
 		} else {
 			cred.username = prompt.Credentials("Username:")
 			cred.password = prompt.Credentials("Password:")
@@ -483,12 +490,12 @@ func main() {
 		if len(checkList) > 1 {
 			deviceList = checkList
 		}
-		//bar := pb.StartNew(len(deviceList)).SetTemplate(pb.Simple).SetRefreshRate(25 * time.Millisecond) //Default refresh rate is 200 Milliseconds.
+		bar := pb.StartNew(len(deviceList)).SetTemplate(pb.Simple).SetRefreshRate(25 * time.Millisecond) //Default refresh rate is 200 Milliseconds.
 
 		for _, deviceIP := range deviceList {
 			waitGroup.Wait()
 			go func(host string) {
-				//defer bar.Increment()
+				defer bar.Increment()
 				defer waitGroup.Done()
 				err := cred.SSHConnect(userScript, host)
 				if err != nil {
@@ -499,14 +506,13 @@ func main() {
 
 		//blocks until ALL go routines are done.
 		waitGroup.WaitAllDone()
-		/*
-			for i := uint8(0); i <= 50; i++ {
-				if bar.Current() == int64(len(deviceList)) {
-					bar.Finish()
-					break
-				}
-				time.Sleep(5 * time.Millisecond)
-			}*/
+		for i := uint8(0); i <= 50; i++ {
+			if bar.Current() == int64(len(deviceList)) {
+				bar.Finish()
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
 		showResults()
 		prompt.Pause()
 	}
