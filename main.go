@@ -4,6 +4,12 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"log"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/Rldeckard/aesGenerate256/authGen"
 	"github.com/Rldeckard/sshRunCMD/closeHandler"
 	"github.com/Rldeckard/sshRunCMD/dialSSHClient"
@@ -13,11 +19,6 @@ import (
 	"github.com/spf13/viper"
 	"github.com/zenthangplus/goccm"
 	"golang.org/x/crypto/ssh"
-	"log"
-	"os"
-	"strings"
-	"sync"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -212,16 +213,11 @@ func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry)
 		connect.Init(cred.username, cred.password, "")
 		_, err := connect.DialClient(viper.GetString("helper.core"))
 		if err != nil {
-			var dialogError dialog.Dialog
-			if strings.Contains(err.Error(), "SSH attempt Timed Out") {
-				dialogError = dialog.NewCustom("Error", "Close", widget.NewLabel("Can't connect to Core Device."), myWindow)
-			} else {
-				dialogError = dialog.NewError(err, myWindow)
-			}
+			dialog.NewCustom("Error", "Close", widget.NewLabel("Can't connect to Core Device. Please check credentials.\n"+err.Error()), myWindow).Show()
 			//"Supplied Credentials not working."
-			dialogError.Show()
 			return
 		}
+
 	}
 	outputCMD.Text = ""
 	waitGroup := goccm.New(40)
@@ -233,9 +229,11 @@ func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry)
 		waitGroup.Wait()
 		go func(host string) {
 			defer waitGroup.Done()
-			err := cred.SSHConnect(userScriptSlice, strings.TrimSpace(host))
-			if err != nil {
-				log.Print(err)
+			if strings.TrimSpace(host) != "" {
+				err := cred.SSHConnect(userScriptSlice, strings.TrimSpace(host))
+				if err != nil {
+					log.Print(err)
+				}
 			}
 		}(deviceIP)
 	}
@@ -248,8 +246,44 @@ func (cred *CRED) guiApp() {
 	myApp := app.New()
 	myWindow = myApp.NewWindow("sshRunCMD")
 	myWindow.Resize(fyne.NewSize(1050, 0))
+
 	// Main menu
+
+	formUser := widget.NewEntry()
+	formPass := widget.NewPasswordEntry()
+	formDrop := widget.NewSelect([]string{"Active Directory", "Local Account"}, func(value string) {
+		if value == "Active Directory" {
+			formUser.Text = cred.username
+		}
+		if value == "Local Account" {
+			formUser.Text = cred.fallbackUser
+		}
+		formUser.Refresh()
+	})
+	formDrop.SetSelectedIndex(0)
+	loginFormItems := []*widget.FormItem{
+		{Text: "", Widget: formDrop},
+		{Text: "Username", Widget: formUser},
+		{Text: "Password", Widget: formPass},
+	}
 	fileMenu := fyne.NewMenu("File",
+		fyne.NewMenuItem("Manage Credentials", func() {
+			formUser.Text = cred.username
+			formPopUp := dialog.NewForm("Manage", "Update", "Cancel", loginFormItems, func(ok bool) {
+				if ok {
+					if formDrop.Selected == "Active Directory" {
+						cred.username = formUser.Text
+						cred.password = formPass.Text
+					} else {
+						cred.fallbackUser = formUser.Text
+						cred.fallbackPass = formPass.Text
+					}
+					formPass.Text = ""
+				}
+			}, myWindow)
+			formPopUp.Resize(fyne.NewSize(300, 0))
+			formPopUp.Show()
+		}),
 		fyne.NewMenuItem("Quit", func() { myApp.Quit() }),
 	)
 
@@ -277,7 +311,6 @@ func (cred *CRED) guiApp() {
 	userScript := widget.NewMultiLineEntry()
 	deviceList.SetMinRowsVisible(10)
 	userScript.SetMinRowsVisible(10)
-
 	submitButton := widget.NewButton(
 		"Run CMD", func() { cred.runProgram(deviceList, userScript) },
 	)
@@ -422,6 +455,8 @@ func showResults() {
 	} else {
 		fmt.Println(deviceResults)
 	}
+	//clears results to prepare for next run
+	progress = Progress{}
 }
 
 var originalOutput = flag.Bool("s", false, "Shows raw output from switches.")
