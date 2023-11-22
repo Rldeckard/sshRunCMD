@@ -196,6 +196,7 @@ func (cred *CRED) guiApp() {
 	outputScroll.SetMinSize(fyne.NewSize(450, 0))
 
 	progBar = widget.NewProgressBar()
+	progBar.Hide()
 
 	deviceList := widget.NewMultiLineEntry()
 	userScript := widget.NewMultiLineEntry()
@@ -261,7 +262,7 @@ func (cred *CRED) guiApp() {
 	)
 	right := container.NewBorder(
 		outTitle,
-		container.NewVBox(progBar),
+		progBar,
 		nil,
 		nil,
 		outputScroll,
@@ -314,6 +315,7 @@ func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry)
 	outputCMD.Text = "\nApplication Started....\n"
 	outputCMD.Refresh()
 	progress.step = 1 / float64(len(deviceSlice))
+	progBar.Show()
 	progBar.SetValue(progress.step)
 	for _, deviceIP := range deviceSlice {
 		waitGroup.Wait()
@@ -329,5 +331,4 @@ func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry)
 	}
 	waitGroup.WaitAllDone()
 	showResults()
-
 }
