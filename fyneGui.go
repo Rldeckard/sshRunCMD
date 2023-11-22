@@ -2,15 +2,19 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/gonutz/w32/v2"
+
 	"github.com/Rldeckard/aesGenerate256/authGen"
 	"github.com/Rldeckard/sshRunCMD/dialSSHClient"
 	"github.com/spf13/viper"
 	"github.com/zenthangplus/goccm"
-	"log"
-	"os"
-	"strconv"
-	"strings"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -20,10 +24,32 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+// Windows doesn't allow console and Gui apps in one anymore.
+// Dont specify the windowsgui flag and use this to maintain CLI functionality with Fyne
+func hideConsole() {
+	console := w32.GetConsoleWindow()
+	if console == 0 {
+		return // no console attached
+	}
+	// If this application is the process that created the console window, then
+	// this program was not compiled with the -H=windowsgui flag and on start-up
+	// it created a console along with the main application window. In this case
+	// hide the console window.
+	// See
+	// http://stackoverflow.com/questions/9009333/how-to-check-if-the-program-is-run-from-a-console
+	_, consoleProcID := w32.GetWindowThreadProcessId(console)
+	if w32.GetCurrentProcessId() == consoleProcID {
+		w32.ShowWindowAsync(console, w32.SW_HIDE)
+	}
+}
 func (cred *CRED) guiApp() {
+	// Windows doesn't allow console and Gui apps in one anymore.
+	// Dont specify the windowsgui flag and use this to maintain CLI functionality with Fyne
+	hideConsole()
+
 	myApp := app.New()
 	myWindow = myApp.NewWindow("sshRunCMD")
-	myWindow.Resize(fyne.NewSize(1050, 0))
+	myWindow.Resize(fyne.NewSize(950, 500))
 
 	// Main menu
 
@@ -75,10 +101,12 @@ func (cred *CRED) guiApp() {
 				dialog.NewCustom("Oops", "Close", widget.NewLabel("No results to export. Please run query before exporting."), myWindow).Show()
 			} else {
 				timeRaw := time.Now()
+				os.UserConfigDir()
 				userHome, _ := os.UserHomeDir()
 				fileName := fmt.Sprintf("sshRunCMD-Export_%s.txt", timeRaw.Format("150405"))
+				fileLocation := fmt.Sprintf(`%s\Downloads\%s`, userHome, fileName)
 				f, err := os.OpenFile(
-					fmt.Sprintf(`%s\Downloads\%s`, userHome, fileName),
+					fileLocation,
 					os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644,
 				)
 				if err != nil {
@@ -90,7 +118,23 @@ func (cred *CRED) guiApp() {
 				if err != nil {
 					log.Println("Issue writing to file.")
 				}
-				dialog.NewCustom("Export Complete", "Ok", widget.NewLabel("Export sent to Downloads Folder."), myWindow).Show()
+				fileOpen := widget.Hyperlink{
+					Text: "Open File",
+					OnTapped: func() {
+						cmd := exec.Command("cmd", "/C", "start "+fileLocation)
+						err := cmd.Run()
+						if err != nil {
+							dialog.NewCustom("Error", "Close", widget.NewLabel("Issue with file, retry:\n"+err.Error()), myWindow).Show()
+						}
+					},
+				}
+				linkText := container.NewVBox(
+					widget.NewLabel("File exported to Downloads folder"),
+					container.NewCenter(
+						container.NewHBox(&fileOpen),
+					),
+				)
+				dialog.NewCustom("Export Complete", "Ok", linkText, myWindow).Show()
 			}
 			return
 		}),
@@ -149,11 +193,11 @@ func (cred *CRED) guiApp() {
 
 	outputScroll := container.NewVScroll(outputCMD)
 	outputCMD.Wrapping = fyne.TextWrapWord //outputScroll.ScrollToBottom()
+	outputScroll.SetMinSize(fyne.NewSize(450, 0))
 
 	deviceList := widget.NewMultiLineEntry()
 	userScript := widget.NewMultiLineEntry()
-	deviceList.SetMinRowsVisible(5)
-	userScript.SetMinRowsVisible(5)
+
 	submitButton := widget.NewButton(
 		"Run CMD", func() { cred.runProgram(deviceList, userScript) },
 	)
@@ -189,27 +233,28 @@ func (cred *CRED) guiApp() {
 		}
 	})
 	verifyCredsCheck.SetChecked(true)
-
-	ipBox := container.New(
-		layout.NewVBoxLayout(),
-		widget.NewLabel("IP Addresses"),
-		deviceList,
-	)
-	cmdBox := container.New(
-		layout.NewVBoxLayout(),
-		widget.NewLabel("Commands"),
-		userScript,
-		submitButton,
-	)
 	buttonBox := container.New(
 		layout.NewHBoxLayout(),
 		testButton,
 		verifyCredsCheck,
 	)
-	left := container.New(
-		layout.NewVBoxLayout(),
-		ipBox,
+	ipBox := container.NewBorder(
+		widget.NewLabel("IP Addresses"),
 		buttonBox,
+		nil,
+		nil,
+		deviceList,
+	)
+	cmdBox := container.NewBorder(
+		widget.NewLabel("Commands"),
+		submitButton,
+		nil,
+		nil,
+		userScript,
+	)
+	left := container.New(
+		layout.NewGridLayout(1),
+		ipBox,
 		cmdBox,
 	)
 	right := container.NewBorder(

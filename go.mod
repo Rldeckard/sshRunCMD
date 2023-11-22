@@ -7,6 +7,7 @@ require (
 	github.com/Rldeckard/aesGenerate256 v1.2.0
 	github.com/cheggaaa/pb/v3 v3.1.4
 	github.com/go-ping/ping v1.1.0
+	github.com/gonutz/w32/v2 v2.11.1
 	github.com/spf13/viper v1.16.0
 	github.com/zenthangplus/goccm v1.1.3
 	golang.org/x/crypto v0.11.0

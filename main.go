@@ -86,11 +86,8 @@ func main() {
 			cred.password = prompt.Credentials("Password:")
 		}
 	}
-	if *showGUI {
-		cred.guiApp()
-	}
-	if *showGUI == false {
-		if *testRun == false {
+	if !*showGUI {
+		if !*testRun {
 			deviceList = prompt.List("Enter Device List, Press Enter when completed.")
 			userScript = prompt.List("Enter commands to run, Press Enter when completed.")
 		} else {
@@ -128,6 +125,8 @@ func main() {
 		}
 		showResults()
 		prompt.Pause()
+	} else {
+		cred.guiApp()
 	}
 
 }
