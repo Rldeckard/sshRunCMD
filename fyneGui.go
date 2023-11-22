@@ -195,6 +195,8 @@ func (cred *CRED) guiApp() {
 	outputCMD.Wrapping = fyne.TextWrapWord //outputScroll.ScrollToBottom()
 	outputScroll.SetMinSize(fyne.NewSize(450, 0))
 
+	progBar = widget.NewProgressBar()
+
 	deviceList := widget.NewMultiLineEntry()
 	userScript := widget.NewMultiLineEntry()
 
@@ -259,12 +261,11 @@ func (cred *CRED) guiApp() {
 	)
 	right := container.NewBorder(
 		outTitle,
-		nil,
+		container.NewVBox(progBar),
 		nil,
 		nil,
 		outputScroll,
 	)
-	right.Resize(fyne.NewSize(400, 400))
 	content := container.New(
 		layout.NewGridLayout(2),
 		left,
@@ -312,6 +313,8 @@ func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry)
 	userScriptSlice := strings.Split(userScript.Text, "\n")
 	outputCMD.Text = "\nApplication Started....\n"
 	outputCMD.Refresh()
+	progress.step = 1 / float64(len(deviceSlice))
+	progBar.SetValue(progress.step)
 	for _, deviceIP := range deviceSlice {
 		waitGroup.Wait()
 		go func(host string) {
