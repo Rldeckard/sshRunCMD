@@ -27,6 +27,7 @@ func (cred *CRED) SSHConnect(userScript []string, host string) error {
 	}
 	if stats.PacketsRecv == 0 {
 		//Device Timed out. No need to make a list of available iPs. Exit function.
+		progBar.SetValue(progBar.Value + progress.step)
 		progress.offlineDevices = append(progress.offlineDevices, host)
 		return fmt.Errorf("%s - Unable to connect: Device Offline.", host)
 	}
@@ -39,12 +40,14 @@ func (cred *CRED) SSHConnect(userScript []string, host string) error {
 			client, err = connect.DialClient(host)
 			if err != nil {
 				progress.unauthedDevices = append(progress.unauthedDevices, host)
+				progBar.SetValue(progBar.Value + progress.step)
 				return fmt.Errorf("%s - %s\n", host, err)
 			} else {
 				altCreds = "Using Alternate Credentials"
 			}
 		} else {
 			progress.unauthedDevices = append(progress.unauthedDevices, host)
+			progBar.SetValue(progBar.Value + progress.step)
 			return fmt.Errorf("%s - %s\n", host, err)
 		}
 	}
@@ -63,6 +66,7 @@ func (cred *CRED) SSHConnect(userScript []string, host string) error {
 	})
 	if err != nil {
 		log.Fatal(fmt.Sprintf("%s - Unable to start session: %s", host, err))
+		progBar.SetValue(progBar.Value + progress.step)
 	}
 
 	var stdoutBuf bytes.Buffer
@@ -74,6 +78,7 @@ func (cred *CRED) SSHConnect(userScript []string, host string) error {
 	stdinBuf, err := session.StdinPipe()
 	if err != nil {
 		log.Fatal(fmt.Sprintf("%s - Unable to start session: %s", host, err))
+		progBar.SetValue(progBar.Value + progress.step)
 	}
 
 	session.Shell()
@@ -148,6 +153,7 @@ func (cred *CRED) SSHConnect(userScript []string, host string) error {
 	} else {
 		progress.connectedDevices = append(progress.connectedDevices, host)
 	}
+	progBar.SetValue(progBar.Value + progress.step)
 	m.Unlock()
 	return nil
 }

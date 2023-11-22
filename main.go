@@ -35,6 +35,7 @@ type Progress struct {
 	connectedDevices      []string
 	failedCommandsDevices []string
 	failedCommands        []string
+	step                  float64
 }
 
 var originalOutput = flag.Bool("s", false, "Shows raw output from switches.")
@@ -49,6 +50,7 @@ var showGUI = flag.Bool("g", true, "Disables GUI. Ex. -g=false")
 var helpCalled = flag.Bool("h", false, "Shows Usage Menu.")
 var progress Progress
 var outputCMD = widget.NewLabel("")
+var progBar *widget.ProgressBar
 var myWindow fyne.Window
 var useCreds = false
 
