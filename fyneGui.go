@@ -72,24 +72,27 @@ func (cred *CRED) guiApp() {
 	}
 	fileMenu := fyne.NewMenu("File",
 		fyne.NewMenuItem("Manage Credentials", func() {
-			viper.AddConfigPath(".")
-			viper.SetConfigName("key") // Register config file name (no extension)
-			viper.SetConfigType("yml") // Look for specific type
 			formUser.Text = cred.username
 			formPopUp := dialog.NewForm("Manage", "Update", "Cancel", loginFormItems, func(ok bool) {
 				if ok {
 					if formDrop.Selected == "Active Directory" {
 						cred.username = strings.Trim(formUser.Text, " ")
 						cred.password = strings.Trim(formPass.Text, " ")
-						viper.Set("helper.username", aes256.Encrypt(appCode, cred.username))
-						viper.Set("helper.password", aes256.Encrypt(appCode, cred.password))
+						//TODO: Generate appCode and save to file if not present.
+						if appCode != "" {
+							viper.Set("helper.username", aes256.Encrypt(appCode, cred.username))
+							viper.Set("helper.password", aes256.Encrypt(appCode, cred.password))
+						}
 
 					} else {
 						cred.fallbackUser = strings.Trim(formUser.Text, " ")
 						cred.fallbackPass = strings.Trim(formPass.Text, " ")
-						viper.Set("helper.fallbackUser", aes256.Encrypt(appCode, cred.fallbackUser))
-						viper.Set("helper.fallbackPass", aes256.Encrypt(appCode, cred.fallbackPass))
+						if appCode != "" {
+							viper.Set("helper.fallbackUser", aes256.Encrypt(appCode, cred.fallbackUser))
+							viper.Set("helper.fallbackPass", aes256.Encrypt(appCode, cred.fallbackPass))
+						}
 					}
+					viper.WriteConfig()
 					formPass.Text = ""
 				}
 			}, myWindow)
@@ -136,7 +139,6 @@ func (cred *CRED) guiApp() {
 				)
 				dialog.NewCustom("Export Complete", "Ok", linkText, myWindow).Show()
 			}
-			return
 		}),
 		fyne.NewMenuItem("Quit", func() { myApp.Quit() }),
 	)
@@ -144,7 +146,7 @@ func (cred *CRED) guiApp() {
 		fyne.NewMenuItem("About", func() {
 			dialog.ShowCustom("About", "Close", container.NewVBox(
 				widget.NewLabel("Welcome to sshRunCMD, a simple CLI application for managing switches."),
-				widget.NewLabel("Version: v1.3.1"),
+				widget.NewLabel("Version: v1.4.0"),
 				widget.NewLabel("Author: Ryan Deckard"),
 			), myWindow)
 		}))
@@ -160,9 +162,6 @@ func (cred *CRED) guiApp() {
 	}
 	editMenu := fyne.NewMenu("Edit",
 		fyne.NewMenuItem("Options", func() {
-			viper.AddConfigPath(".")
-			viper.SetConfigName("key") // Register config file name (no extension)
-			viper.SetConfigType("yml") // Look for specific type
 			coreEntry.Text = cred.core
 			pingCountEntry.Text = fmt.Sprint(cred.pingCount)
 			pingTimeoutEntry.Text = fmt.Sprint(cred.pingTimeout)
@@ -174,6 +173,7 @@ func (cred *CRED) guiApp() {
 					viper.Set("helper.core", cred.core)
 					viper.Set("blockTimer.pingCount", cred.pingCount)
 					viper.Set("blockTimer.pingTimeout", cred.pingTimeout)
+					viper.WriteConfig()
 				}
 			}, myWindow)
 			settingsPop.Resize(fyne.NewSize(300, 0))
