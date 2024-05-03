@@ -41,7 +41,7 @@ type Progress struct {
 var originalOutput = flag.Bool("s", false, "Shows raw output from switches.")
 var testRun = flag.Bool("t", false, "Run preloaded test case for development. Defined in helper file.")
 var verboseOutput = flag.Bool("v", false, "Output all successfully connected devices.")
-var dontVerifyCreds = flag.Bool("c", false, "Doesn't verify your credentials against a known device. Be careful to not lock out your account.")
+var verifyCreds = flag.Bool("c", false, "Doesn't verify your credentials against a known device. Be careful to not lock out your account.")
 var promptCreds = flag.Bool("p", false, "Bypasses all stored credentials and prompts for new credentials.")
 var fileOutput = flag.Bool("f", false, "Sends output from switches to file. Good for show runs or cdp neighbor.")
 

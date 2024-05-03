@@ -229,7 +229,7 @@ func (cred *CRED) guiApp() {
 		},
 	)
 	verifyCredsCheck := widget.NewCheck("Check Credentials", func(ok bool) {
-		*dontVerifyCreds = ok
+		*verifyCreds = ok
 	})
 
 	legacySSHCheck := widget.NewCheck("Legacy SSH", func(ok bool) {
@@ -289,7 +289,7 @@ func (cred *CRED) guiApp() {
 
 func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry) { // optional, handle form submission
 	//clear output for subsequent runs
-	if !*dontVerifyCreds {
+	if *verifyCreds {
 		if cred.username == "" || cred.password == "" {
 			dialog.NewCustom("Error", "Close", widget.NewLabel("Credentials not provided. \nPlease update helper.yml or manually add under File > Manage Credentials.\n"), myWindow).Show()
 			return
@@ -325,7 +325,12 @@ func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry)
 			if strings.TrimSpace(host) != "" {
 				err := cred.SSHConnect(userScriptSlice, strings.TrimSpace(host))
 				if err != nil {
-					outputCMD.Text = host + ": issue with ssh: " + err.Error() + "\n" + outputCMD.Text
+					errOut := err.Error()
+					//no idea why this error means authentication failed.....but it does
+					if strings.Contains(errOut, "reason 2: Non-assigned port") {
+						errOut = "unable to connect: ssh: authentication not provided"
+					}
+					outputCMD.Text = host + ": issue with ssh: " + errOut + "\n" + outputCMD.Text
 				}
 			}
 		}(deviceIP)
