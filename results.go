@@ -12,7 +12,7 @@ func showResults() {
 			"\n\tOffline devices (%d) : %s\n"+
 			"\tOnline but unable to authenticate with given credentials (%d) : %s\n"+
 			"\tSuccessfully connected, but unable to run commands: (%d) \"%s\" on (%d) devices : %s\n"+
-			"\tSuccessfully able to connect and run commands (%d) : %s\n",
+			"\tSuccessfully able to connect and run commands (%d) : %s\n\n",
 			len(progress.offlineDevices),
 			strings.Join(progress.offlineDevices, " "),
 			len(progress.unauthedDevices),
@@ -29,7 +29,7 @@ func showResults() {
 			"\tOffline devices (%v) : %v\n"+
 			"\tOnline but unable to authenticate with given credentials (%v) : %v\n"+
 			"\tSuccessfully connected, but unable to run commands: (%v) on (%v) devices : %v\n"+
-			"\tSuccessfully able to connect and run commands (%v)\n",
+			"\tSuccessfully able to connect and run commands (%v)\n\n",
 			len(progress.offlineDevices),
 			strings.Join(progress.offlineDevices, " "),
 			len(progress.unauthedDevices),

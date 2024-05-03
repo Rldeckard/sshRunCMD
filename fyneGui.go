@@ -229,17 +229,18 @@ func (cred *CRED) guiApp() {
 		},
 	)
 	verifyCredsCheck := widget.NewCheck("Check Credentials", func(ok bool) {
-		if !ok {
-			*dontVerifyCreds = true
-		} else {
-			*dontVerifyCreds = false
-		}
+		*dontVerifyCreds = ok
+	})
+
+	legacySSHCheck := widget.NewCheck("Legacy SSH", func(ok bool) {
+		legacySSH = ok
 	})
 	verifyCredsCheck.SetChecked(true)
 	buttonBox := container.New(
 		layout.NewHBoxLayout(),
 		testButton,
 		verifyCredsCheck,
+		legacySSHCheck,
 	)
 	ipBox := container.NewBorder(
 		widget.NewLabel("IP Addresses"),
@@ -294,7 +295,7 @@ func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry)
 			return
 		}
 		//checks credentials against a default device so you don't lock yourself out
-		connect.Init(cred.username, cred.password, "")
+		connect.Init(cred.username, cred.password, "", legacySSH)
 		if cred.core == "" {
 			dialog.NewCustom("Error", "Close", widget.NewLabel("No core device specified in helper file. Please add to Edit > Options."), myWindow).Show()
 			return
@@ -324,7 +325,7 @@ func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry)
 			if strings.TrimSpace(host) != "" {
 				err := cred.SSHConnect(userScriptSlice, strings.TrimSpace(host))
 				if err != nil {
-					log.Print(err)
+					outputCMD.Text = host + ": issue with ssh: " + err.Error() + "\n" + outputCMD.Text
 				}
 			}
 		}(deviceIP)

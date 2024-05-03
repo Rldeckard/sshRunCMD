@@ -18,7 +18,7 @@ import (
 func (cred *CRED) SSHConnect(userScript []string, host string) error {
 	var m sync.Mutex
 
-	connect.Init(cred.username, cred.password, "")
+	connect.Init(cred.username, cred.password, "", legacySSH)
 	altCreds := ""
 
 	stats, err := connect.IsAlive(host, cred.pingCount, cred.pingTimeout) // get send/receive/rtt stats
@@ -29,7 +29,7 @@ func (cred *CRED) SSHConnect(userScript []string, host string) error {
 		//Device Timed out. No need to make a list of available iPs. Exit function.
 		progBar.SetValue(progBar.Value + progress.step)
 		progress.offlineDevices = append(progress.offlineDevices, host)
-		return fmt.Errorf("%s - Unable to connect: Device Offline.", host)
+		return fmt.Errorf("%s - Unable to connect: Device Offline", host)
 	}
 	client, err := connect.DialClient(host)
 	if err != nil {
@@ -41,21 +41,21 @@ func (cred *CRED) SSHConnect(userScript []string, host string) error {
 			if err != nil {
 				progress.unauthedDevices = append(progress.unauthedDevices, host)
 				progBar.SetValue(progBar.Value + progress.step)
-				return fmt.Errorf("%s - %s\n", host, err)
+				return fmt.Errorf("%s - %s", host, err)
 			} else {
 				altCreds = "Using Alternate Credentials"
 			}
 		} else {
 			progress.unauthedDevices = append(progress.unauthedDevices, host)
 			progBar.SetValue(progBar.Value + progress.step)
-			return fmt.Errorf("%s - %s\n", host, err)
+			return fmt.Errorf("%s - %s", host, err)
 		}
 	}
 	defer client.Close()
 	// Open a session
 	session, err := client.NewSession()
 	if err != nil {
-		log.Fatal(fmt.Sprintf("%s - Failed to create session: %s", host, err))
+		log.Fatalf("%s - Failed to create session: %s", host, err)
 	}
 	defer session.Close()
 
@@ -65,7 +65,7 @@ func (cred *CRED) SSHConnect(userScript []string, host string) error {
 		ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
 	})
 	if err != nil {
-		log.Fatal(fmt.Sprintf("%s - Unable to start session: %s", host, err))
+		log.Fatalf("%s - Unable to start session: %s", host, err)
 		progBar.SetValue(progBar.Value + progress.step)
 	}
 
@@ -77,7 +77,7 @@ func (cred *CRED) SSHConnect(userScript []string, host string) error {
 
 	stdinBuf, err := session.StdinPipe()
 	if err != nil {
-		log.Fatal(fmt.Sprintf("%s - Unable to start session: %s", host, err))
+		log.Fatalf("%s - Unable to start session: %s", host, err)
 		progBar.SetValue(progBar.Value + progress.step)
 	}
 
@@ -123,7 +123,7 @@ func (cred *CRED) SSHConnect(userScript []string, host string) error {
 
 	outputArray, failedCommand := output.Process(outputArray, *originalOutput)
 	outputString := fmt.Sprintf("\n#####################  %s  #####################\n%s", host, altCreds)
-	if outputFinished == false {
+	if !outputFinished {
 		outputString = outputString + "\nWARNING: Incomplete Output"
 	}
 	if *fileOutput {
@@ -144,9 +144,9 @@ func (cred *CRED) SSHConnect(userScript []string, host string) error {
 
 	} else {
 		//Newline needed when outputting to console for output array join.
-		fmt.Printf(fmt.Sprintf("%s\n\n%s\n", outputString, strings.TrimSpace(strings.Join(outputArray, "\n"))))
+		fmt.Printf("%s\n\n%s\n", outputString, strings.TrimSpace(strings.Join(outputArray, "\n")))
 	}
-	if failedCommand == true {
+	if failedCommand {
 		progress.failedCommandsDevices = append(progress.failedCommandsDevices, host)
 		progress.failedCommands = append(progress.failedCommands, strings.Join(userScript, ","))
 		log.Printf("%s - Command not applied to switch.", host)

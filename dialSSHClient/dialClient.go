@@ -19,18 +19,24 @@ func SetTimeout(seconds int) {
 
 // Sets up the config for an SSH connection. Default Timeout is 2 seconds.
 // You can optionally provide a privatekey using "" double quotes for the unused variable.
-func Init(username string, password string, privatekey string) {
+func Init(username string, password string, privatekey string, legacySSH bool) {
 	config = &ssh.ClientConfig{
 		User:            username,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		//Might need to play with this. Default timeout is something insane like 10 seconds. I thought the program froze.
 		Timeout: time.Duration(sshConnectTimeout) * time.Second,
+		//not needed currently, but good code to keep
 		/*
-			//not needed currently, but good code to keep
 			Config: ssh.Config{
-				Ciphers: []string{"aes128-ctr", "hmac-sha2-256"},
+				KeyExchanges: []string{"diffie-hellman-group1-sha1"},
+				Ciphers:      []string{"aes128-cbc", "hmac-sha2-256"},
 			},
 		*/
+	}
+	config.Config.SetDefaults()
+	if legacySSH {
+		config.Config.Ciphers = append(config.Config.Ciphers, "aes128-cbc")
+		config.Config.KeyExchanges = append(config.Config.KeyExchanges, "diffie-hellman-group1-sha1")
 	}
 	// A public key may be used to authenticate against the remote
 	// server by using an unencrypted PEM-encoded private key file.
@@ -59,14 +65,14 @@ func DialClient(host string) (*ssh.Client, error) {
 		if strings.Contains(err.Error(),
 			`connectex: A connection attempt failed because the connected party did not properly respond after a period of time`) ||
 			strings.Contains(err.Error(), `i/o timeout`) {
-			return nil, fmt.Errorf("Unable to connect: SSH attempt Timed Out.")
+			return nil, fmt.Errorf("unable to connect: SSH attempt Timed Out")
 		}
 		//Confusing errors. If it's exhausted all authentication methods it's probably a bad password.
 		//We don't want to gather the progress here, because this error gets reused in the return.
 		if strings.Contains(err.Error(), "unable to authenticate, attempted methods [none password]") {
-			return nil, fmt.Errorf("Unable to connect: Authentication Failed")
+			return nil, fmt.Errorf("unable to connect: Authentication Failed")
 		} else {
-			return nil, fmt.Errorf("Unable to connect: %s", err)
+			return nil, fmt.Errorf("unable to connect: %s", err)
 		}
 	}
 

@@ -53,6 +53,7 @@ var outputCMD = widget.NewLabel("")
 var progBar *widget.ProgressBar
 var myWindow fyne.Window
 var useCreds = false
+var legacySSH = false
 
 // encryption key used to decrypt helper.yml
 // create 'helper.key' file to store appCode. Copy below code format for yml
@@ -111,7 +112,7 @@ func main() {
 				defer waitGroup.Done()
 				err := cred.SSHConnect(userScript, host)
 				if err != nil {
-					log.Print(err)
+					log.Fatalf("issue with ssh: %v", err)
 				}
 			}(deviceIP)
 		}
