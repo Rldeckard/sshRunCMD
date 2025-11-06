@@ -1,9 +1,10 @@
 package main
 
 import (
+	"log"
+
 	"github.com/Rldeckard/aesGenerate256/authGen"
 	"github.com/spf13/viper"
-	"log"
 )
 
 // Reads username and password from config files and defines them inside the CMD type.
@@ -16,7 +17,10 @@ func GetCredentialsFromFiles(cred *CRED) bool {
 		log.Println(err)
 	}
 	appCode = viper.GetString("helper.key")
-
+	if len(appCode) == 0 {
+		appCode = aes256.Random32ByteString()
+		viper.Set("helper.key", appCode)
+	}
 	viper.SetConfigName("helper") // Change file and reread contents.
 	err = viper.ReadInConfig()
 	if err != nil {

@@ -82,7 +82,7 @@ func main() {
 	GetCredentialsFromFiles(&cred)
 	if cred.username == "" || *promptCreds {
 		if !*promptCreds {
-			log.Println("Unable to read credentials from helper file.")
+			log.Println("Unable to read credentials from helper file. Credentials not preloaded")
 		}
 		if !*showGUI {
 			cred.username = prompt.Credentials("Username:")

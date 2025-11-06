@@ -49,7 +49,7 @@ func (cred *CRED) guiApp() {
 
 	myApp := app.New()
 	myWindow = myApp.NewWindow("sshRunCMD")
-	myWindow.Resize(fyne.NewSize(950, 500))
+	myWindow.Resize(fyne.NewSize(1000, 500))
 
 	// Main menu
 
@@ -208,7 +208,9 @@ func (cred *CRED) guiApp() {
 	testButton := widget.NewButton(
 		//premade test to run against network to verify applicaton functionality
 		"Test Run", func() {
-			surePopup := dialog.NewConfirm("Please confirm", "Run test script?", func(ok bool) {
+			var surePopup *dialog.ConfirmDialog
+
+			surePopup = dialog.NewConfirm("Please confirm", "Run test script?", func(ok bool) {
 				if ok {
 					procDeviceList := viper.GetStringSlice("tester.devices")
 					deviceList.Text = strings.Join(procDeviceList, "\n")
@@ -222,6 +224,7 @@ func (cred *CRED) guiApp() {
 					}
 					deviceList.Refresh()
 					userScript.Refresh()
+					surePopup.Hide()
 					cred.runProgram(deviceList, userScript)
 				}
 			}, myWindow)
@@ -288,53 +291,65 @@ func (cred *CRED) guiApp() {
 }
 
 func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry) { // optional, handle form submission
-	//clear output for subsequent runs
-	if *verifyCreds {
-		if cred.username == "" || cred.password == "" {
-			dialog.NewCustom("Error", "Close", widget.NewLabel("Credentials not provided. \nPlease update helper.yml or manually add under File > Manage Credentials.\n"), myWindow).Show()
-			return
-		}
-		//checks credentials against a default device so you don't lock yourself out
-		connect.Init(cred.username, cred.password, "", legacySSH)
-		if cred.core == "" {
-			dialog.NewCustom("Error", "Close", widget.NewLabel("No core device specified in helper file. Please add to Edit > Options."), myWindow).Show()
-			return
-		} else {
-			_, err := connect.DialClient(cred.core)
-			if err != nil {
-				dialog.NewCustom("Error", "Close", widget.NewLabel("Can't connect to Core Device. Please check credentials.\n"+err.Error()), myWindow).Show()
-				//"Supplied Credentials not working."
-				return
-			}
-		}
-
-	}
-	outputCMD.Text = ""
-	waitGroup := goccm.New(40)
 	deviceSlice := strings.Split(deviceList.Text, "\n")
-	userScriptSlice := strings.Split(userScript.Text, "\n")
-	outputCMD.Text = "\nApplication Started....\n"
-	outputCMD.Refresh()
 	progress.step = 1 / float64(len(deviceSlice))
 	progBar.Show()
 	progBar.SetValue(progress.step)
-	for _, deviceIP := range deviceSlice {
-		waitGroup.Wait()
-		go func(host string) {
-			defer waitGroup.Done()
-			if strings.TrimSpace(host) != "" {
-				err := cred.SSHConnect(userScriptSlice, strings.TrimSpace(host))
+	if *verifyCreds {
+		if (cred.username == "" || cred.password == "") {
+			if (cred.fallbackPass == "" || cred.fallbackUser == "") {
+				dialog.NewCustom("Error", "Close", widget.NewLabel("Credentials not provided. \nPlease update helper.yml or manually add under File > Manage Credentials.\n"), myWindow).Show()
+				return
+			} 
+		} else {
+			//checks credentials against a default device so you don't lock yourself out. Only done for primary / AD creds. Doesn't check for local creds.
+			connect.Init(cred.username, cred.password, "", legacySSH)
+			if cred.core == "" {
+				dialog.NewCustom("Error", "Close", widget.NewLabel("No core device specified in helper file. Please add to Edit > Options."), myWindow).Show()
+				return
+			} else {
+				outputCMD.Text = "\nVerifying credentials\n"
+				outputCMD.Refresh()
+				_, err := connect.DialClient(cred.core)
 				if err != nil {
-					errOut := err.Error()
-					//no idea why this error means authentication failed.....but it does
-					if strings.Contains(errOut, "reason 2: Non-assigned port") {
-						errOut = "unable to connect: ssh: authentication not provided"
-					}
-					outputCMD.Text = host + ": issue with ssh: " + errOut + "\n" + outputCMD.Text
+					dialog.NewCustom("Error", "Close", widget.NewLabel("Can't connect to Core Device. Please check credentials.\n"+err.Error()), myWindow).Show()
+					//"Supplied Credentials not working."
+					return
 				}
 			}
-		}(deviceIP)
+		}
+			
+
+		
+
 	}
-	waitGroup.WaitAllDone()
-	showResults()
+	outputCMD.Text = ""
+	userScriptSlice := strings.Split(userScript.Text, "\n")
+	// recent updates in Fyne offloaded GUI Refresh() to its own thread. You can no longer block the main application for any length of time. 
+	// For the below refresh to work as expected all addtional items below that had to be put into a Go Routine.
+	outputCMD.Text = "\nApplication Started....\n"
+	outputCMD.Refresh()
+	go func() {
+		waitGroup := goccm.New(40)
+		for _, deviceIP := range deviceSlice {
+			waitGroup.Wait()
+			go func(host string) {
+				defer waitGroup.Done()
+				if strings.TrimSpace(host) != "" {
+					err := cred.SSHConnect(userScriptSlice, strings.TrimSpace(host))
+					if err != nil {
+						errOut := err.Error()
+						//no idea why this error means authentication failed.....but it does
+						if strings.Contains(errOut, "reason 2: Non-assigned port") {
+							errOut = "unable to connect: ssh: authentication not provided"
+						}
+						outputCMD.Text = host + ": issue with ssh: " + errOut + "\n" + outputCMD.Text
+					}
+				}
+			}(deviceIP)
+		}
+		waitGroup.WaitAllDone()
+		showResults()
+	}()
+
 }

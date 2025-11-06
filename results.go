@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"fyne.io/fyne/v2"
 )
 
 func showResults() {
@@ -41,8 +42,10 @@ func showResults() {
 		)
 	}
 	if *showGUI {
-		outputCMD.Text = deviceResults + outputCMD.Text
-		outputCMD.Refresh()
+		fyne.Do(func() {
+			outputCMD.Text = deviceResults + outputCMD.Text
+			outputCMD.Refresh()
+		})
 	} else {
 		fmt.Println(deviceResults)
 	}

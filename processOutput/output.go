@@ -15,7 +15,7 @@ func Process(input []string, originalOutput bool) ([]string, bool) {
 				input[index] = ""
 				input[index+1] = ""
 			}
-			if strings.Contains(bannerString, "terminal length") {
+			if strings.Contains(bannerString, "terminal len") {
 				input[index] = ""
 			}
 		}
