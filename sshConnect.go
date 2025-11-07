@@ -14,7 +14,6 @@ import (
 	"github.com/Rldeckard/sshRunCMD/processOutput"
 	"golang.org/x/crypto/ssh"
 	"fyne.io/fyne/v2"
-
 )
 
 // Run command against a host
@@ -104,8 +103,6 @@ func (cred *CRED) SSHConnect(userScript []string, host string) error {
 	// The command has been sent to the device, but you haven't gotten output back yet.
 	stdinBuf.Write([]byte("terminal length 0\n"))
 	time.Sleep(200 * time.Millisecond) //TODO: Might not need, but this ensures commands are applied. Needs rigorous testing.
-
-	fmt.Println("Commands started")
 	for _, command := range userScript {
 		if strings.Contains(command, "config t") {
 			configT = true
@@ -173,7 +170,6 @@ func (cred *CRED) WatchForOutput(outputArray []string, scanner *bufio.Scanner) (
 		outputArray = append(outputArray, strings.TrimSpace(scanner.Text()))
 		outputLastLine := strings.TrimSpace(outputArray[len(outputArray)-1])
 		if len(outputArray) > 3 && strings.HasSuffix(outputLastLine, "#") {
-			fmt.Println("Completed")
 			break
 		}
 		i++

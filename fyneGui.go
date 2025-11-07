@@ -146,7 +146,7 @@ func (cred *CRED) guiApp() {
 		fyne.NewMenuItem("About", func() {
 			dialog.ShowCustom("About", "Close", container.NewVBox(
 				widget.NewLabel("Welcome to sshRunCMD, a simple CLI application for managing switches."),
-				widget.NewLabel("Version: v1.4.0"),
+				widget.NewLabel("Version: v1.6.0"),
 				widget.NewLabel("Author: Ryan Deckard"),
 			), myWindow)
 		}))
@@ -329,6 +329,7 @@ func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry)
 	// For the below refresh to work as expected all addtional items below that had to be put into a Go Routine.
 	outputCMD.Text = "\nApplication Started....\n"
 	outputCMD.Refresh()
+	outputCMD.Text = ""
 	go func() {
 		waitGroup := goccm.New(40)
 		for _, deviceIP := range deviceSlice {
