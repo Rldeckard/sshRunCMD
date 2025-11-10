@@ -93,6 +93,10 @@ func (cred *CRED) guiApp() {
 						}
 					}
 					viper.WriteConfig()
+					err := viper.WriteConfigAs("helper.yml")
+					if err != nil {
+					log.Fatalf("Error writing config file: %v", err)
+					}
 					formPass.Text = ""
 				}
 			}, myWindow)
@@ -174,6 +178,11 @@ func (cred *CRED) guiApp() {
 					viper.Set("blockTimer.pingCount", cred.pingCount)
 					viper.Set("blockTimer.pingTimeout", cred.pingTimeout)
 					viper.WriteConfig()
+					err := viper.WriteConfigAs("helper.yml")
+					if err != nil {
+						log.Fatalf("Error writing config file: %v", err)
+					}
+
 				}
 			}, myWindow)
 			settingsPop.Resize(fyne.NewSize(300, 0))

@@ -79,7 +79,7 @@ func main() {
 		flag.PrintDefaults()
 		os.Exit(0)
 	}
-	GetCredentialsFromFiles(&cred)
+	go GetCredentialsFromFiles(&cred)
 	if cred.username == "" || *promptCreds {
 		if !*promptCreds {
 			log.Println("Unable to read credentials from helper file. Credentials not preloaded")

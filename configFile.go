@@ -20,6 +20,13 @@ func GetCredentialsFromFiles(cred *CRED) bool {
 	if len(appCode) == 0 {
 		appCode = aes256.Random32ByteString()
 		viper.Set("helper.key", appCode)
+		err := viper.WriteConfigAs("key.yml")
+   	 	if err != nil {
+      	  log.Fatalf("Error writing config file: %v", err)
+    	}
+		// prevents the key from being duplicated into the regular config file
+		viper.Set("helper.key", "unused")
+
 	}
 	viper.SetConfigName("helper") // Change file and reread contents.
 	err = viper.ReadInConfig()
