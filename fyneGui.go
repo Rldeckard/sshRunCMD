@@ -150,7 +150,7 @@ func (cred *CRED) guiApp() {
 		fyne.NewMenuItem("About", func() {
 			dialog.ShowCustom("About", "Close", container.NewVBox(
 				widget.NewLabel("Welcome to sshRunCMD, a simple CLI application for managing switches."),
-				widget.NewLabel("Version: v1.6.0"),
+				widget.NewLabel("Version: v1.6.1"),
 				widget.NewLabel("Author: Ryan Deckard"),
 			), myWindow)
 		}))
