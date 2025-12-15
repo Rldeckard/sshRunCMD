@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"sync"
 
 	"github.com/Rldeckard/sshRunCMD/closeHandler"
 	"github.com/Rldeckard/sshRunCMD/userPrompt"
@@ -27,6 +28,8 @@ type CRED struct {
 	core         string
 	pingTimeout  int
 	pingCount    int
+	typeDropDown *widget.Select
+	threads 	 int
 }
 
 type Progress struct {
@@ -98,19 +101,22 @@ func main() {
 			userScript = strings.Split(viper.GetString("tester.commands"), ",") //only works for one command, but needs to be a slice to be processed. Possible convert to csv import if needed.
 		}
 		fmt.Println("Received input, processing...")
-		waitGroup := goccm.New(40)
+		waitGroup := goccm.New(10)
 		checkList := strings.Split(deviceList[0], " ")
 		if len(checkList) > 1 {
 			deviceList = checkList
 		}
 		bar := pb.StartNew(len(deviceList)).SetTemplate(pb.Simple).SetRefreshRate(25 * time.Millisecond) //Default refresh rate is 200 Milliseconds.
-
+		var m sync.Mutex
+		user := cred.username
+	pass := cred.password
+	isLegacy := legacySSH
 		for _, deviceIP := range deviceList {
 			waitGroup.Wait()
 			go func(host string) {
 				defer bar.Increment()
 				defer waitGroup.Done()
-				err := cred.SSHConnect(userScript, host)
+				err := cred.SSHConnect(user, pass, userScript, host, &m, isLegacy)
 				if err != nil {
 					log.Fatalf("issue with ssh: %v", err)
 				}

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"sync"
 
 	"github.com/gonutz/w32/v2"
 
@@ -158,25 +159,32 @@ func (cred *CRED) guiApp() {
 	pingCountEntry := widget.NewEntry()
 	pingTimeoutEntry := widget.NewEntry()
 	coreEntry := widget.NewEntry()
+	threadsEntry := widget.NewEntry()
 
+	//defines form fields to display
 	settingsFormItems := []*widget.FormItem{
 		{Text: "Core IP", Widget: coreEntry},
 		{Text: "Ping Count", Widget: pingCountEntry},
 		{Text: "Ping Timeout (ms)", Widget: pingTimeoutEntry},
+		{Text: "Active Threads", Widget: threadsEntry},
 	}
 	editMenu := fyne.NewMenu("Edit",
 		fyne.NewMenuItem("Options", func() {
+			// loads in default values
 			coreEntry.Text = cred.core
 			pingCountEntry.Text = fmt.Sprint(cred.pingCount)
 			pingTimeoutEntry.Text = fmt.Sprint(cred.pingTimeout)
+			threadsEntry.Text = fmt.Sprint(cred.threads)
 			settingsPop := dialog.NewForm("Manage", "Update", "Cancel", settingsFormItems, func(ok bool) {
 				if ok {
 					cred.core = strings.Trim(coreEntry.Text, " ")
 					cred.pingCount, _ = strconv.Atoi(strings.Trim(pingCountEntry.Text, " "))
 					cred.pingTimeout, _ = strconv.Atoi(strings.Trim(pingTimeoutEntry.Text, " "))
+					cred.threads, _ = strconv.Atoi(strings.Trim(threadsEntry.Text, " "))
 					viper.Set("helper.core", cred.core)
 					viper.Set("blockTimer.pingCount", cred.pingCount)
 					viper.Set("blockTimer.pingTimeout", cred.pingTimeout)
+					viper.Set("helper.threads", cred.threads)
 					viper.WriteConfig()
 					err := viper.WriteConfigAs("helper.yml")
 					if err != nil {
@@ -247,12 +255,19 @@ func (cred *CRED) guiApp() {
 	legacySSHCheck := widget.NewCheck("Legacy SSH", func(ok bool) {
 		legacySSH = ok
 	})
+	// no need to specify the function as we'll just be grabbing the value on run
+	cred.typeDropDown = widget.NewSelect([]string{
+		"Network Devices",
+		"Servers",
+	},func(string){})
+	cred.typeDropDown.SetSelectedIndex(0)
 	verifyCredsCheck.SetChecked(true)
 	buttonBox := container.New(
 		layout.NewHBoxLayout(),
 		testButton,
 		verifyCredsCheck,
 		legacySSHCheck,
+		cred.typeDropDown,
 	)
 	ipBox := container.NewBorder(
 		widget.NewLabel("IP Addresses"),
@@ -312,25 +327,22 @@ func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry)
 			} 
 		} else {
 			//checks credentials against a default device so you don't lock yourself out. Only done for primary / AD creds. Doesn't check for local creds.
-			connect.Init(cred.username, cred.password, "", legacySSH)
+			config := connect.Init(cred.username, cred.password, "", legacySSH)
 			if cred.core == "" {
 				dialog.NewCustom("Error", "Close", widget.NewLabel("No core device specified in helper file. Please add to Edit > Options."), myWindow).Show()
 				return
 			} else {
 				outputCMD.Text = "\nVerifying credentials\n"
 				outputCMD.Refresh()
-				_, err := connect.DialClient(cred.core)
+				client, err := connect.DialClient(cred.core, config)
 				if err != nil {
 					dialog.NewCustom("Error", "Close", widget.NewLabel("Can't connect to Core Device. Please check credentials.\n"+err.Error()), myWindow).Show()
 					//"Supplied Credentials not working."
 					return
 				}
+				client.Close()
 			}
 		}
-			
-
-		
-
 	}
 	outputCMD.Text = ""
 	userScriptSlice := strings.Split(userScript.Text, "\n")
@@ -339,14 +351,18 @@ func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry)
 	outputCMD.Text = "\nApplication Started....\n"
 	outputCMD.Refresh()
 	outputCMD.Text = ""
+	var m sync.Mutex
+	user := cred.username
+	pass := cred.password
+	isLegacy := legacySSH
 	go func() {
-		waitGroup := goccm.New(40)
+		waitGroup := goccm.New(cred.threads)
 		for _, deviceIP := range deviceSlice {
 			waitGroup.Wait()
 			go func(host string) {
 				defer waitGroup.Done()
 				if strings.TrimSpace(host) != "" {
-					err := cred.SSHConnect(userScriptSlice, strings.TrimSpace(host))
+					err := cred.SSHConnect(user, pass, userScriptSlice, strings.TrimSpace(host), &m, isLegacy)
 					if err != nil {
 						errOut := err.Error()
 						//no idea why this error means authentication failed.....but it does
@@ -359,6 +375,7 @@ func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry)
 			}(deviceIP)
 		}
 		waitGroup.WaitAllDone()
+		progBar.Hide()
 		showResults()
 	}()
 

@@ -56,6 +56,11 @@ func GetCredentialsFromFiles(cred *CRED) bool {
 	} else {
 		cred.pingTimeout = 500 //ms
 	}
+	if viper.GetInt("helper.threads") > 0 {
+		cred.threads = viper.GetInt("helper.threads")
+	} else {
+		cred.threads = 6
+	}
 	if len(viper.GetString("helper.core")) > 0 {
 		cred.core = viper.GetString("helper.core")
 	} else {

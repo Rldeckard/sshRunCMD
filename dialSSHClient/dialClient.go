@@ -9,9 +9,7 @@ import (
 	"time"
 )
 
-var sshConnectTimeout = 2
-var config *ssh.ClientConfig
-
+var sshConnectTimeout = 10
 // Set custom timeout value for an ssh connection. Default is 2 seconds.
 func SetTimeout(seconds int) {
 	sshConnectTimeout = seconds
@@ -19,12 +17,12 @@ func SetTimeout(seconds int) {
 
 // Sets up the config for an SSH connection. Default Timeout is 2 seconds.
 // You can optionally provide a privatekey using "" double quotes for the unused variable.
-func Init(username string, password string, privatekey string, legacySSH bool) {
-	config = &ssh.ClientConfig{
+func Init(username string, password string, privatekey string, legacySSH bool) ssh.ClientConfig {
+	config := ssh.ClientConfig{
 		User:            username,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		//Might need to play with this. Default timeout is something insane like 10 seconds. I thought the program froze.
-		Timeout: time.Duration(sshConnectTimeout) * time.Second,
+		Timeout: time.Duration(10) * time.Second,
 		//not needed currently, but good code to keep
 		/*
 			Config: ssh.Config{
@@ -54,13 +52,14 @@ func Init(username string, password string, privatekey string, legacySSH bool) {
 			ssh.Password(password),
 		}
 	}
+	return config
 }
 
 // Uses ssh.Dial() to connect to hosts and sort through error responses. You must Init() the config before dialing.
-func DialClient(host string) (*ssh.Client, error) {
+func DialClient(host string, config ssh.ClientConfig) (*ssh.Client, error) {
 	// Connect to the remote host
 	// Requires defined port number
-	client, err := ssh.Dial("tcp", host+":22", config)
+	client, err := ssh.Dial("tcp", host+":22", &config)
 	if err != nil {
 		if strings.Contains(err.Error(),
 			`connectex: A connection attempt failed because the connected party did not properly respond after a period of time`) ||
@@ -79,17 +78,17 @@ func DialClient(host string) (*ssh.Client, error) {
 	return client, nil
 }
 
-func UpdateUser(username string) {
+func UpdateUser(username string, config *ssh.ClientConfig) {
 	config.User = username
 }
 
-func UpdatePass(password string) {
+func UpdatePass(password string, config *ssh.ClientConfig) {
 	config.Auth = []ssh.AuthMethod{
 		ssh.Password(password),
 	}
 }
 
-func UpdateKey(privatekey string) {
+func UpdateKey(privatekey string, config *ssh.ClientConfig) {
 	signer, err := ssh.ParsePrivateKey([]byte(privatekey))
 	if err != nil {
 		log.Printf("unable to parse private key: %v", err)
