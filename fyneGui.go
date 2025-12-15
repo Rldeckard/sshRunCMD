@@ -12,7 +12,7 @@ import (
 
 	"github.com/gonutz/w32/v2"
 
-	"github.com/Rldeckard/aesGenerate256/authGen"
+	"github.com/neteng-tools/aesGenerate256"
 	"github.com/Rldeckard/sshRunCMD/dialSSHClient"
 	"github.com/spf13/viper"
 	"github.com/zenthangplus/goccm"
@@ -79,24 +79,43 @@ func (cred *CRED) guiApp() {
 					if formDrop.Selected == "Active Directory" {
 						cred.username = strings.Trim(formUser.Text, " ")
 						cred.password = strings.Trim(formPass.Text, " ")
+						encryptedUser, err := aes256.Encrypt(appCode, cred.username)
+						if err != nil {
+							dialog.NewCustom("Oops", "Close", widget.NewLabel("Credentials not saved. Restart applicatio and try again."), myWindow).Show()
+							return
+						}
+						encryptedPass, err := aes256.Encrypt(appCode, cred.password)
+						if err != nil {
+							dialog.NewCustom("Oops", "Close", widget.NewLabel("Credentials not saved. Restart applicatio and try again."), myWindow).Show()
+							return
+						}
 						//TODO: Generate appCode and save to file if not present.
 						if appCode != "" {
-							viper.Set("helper.username", aes256.Encrypt(appCode, cred.username))
-							viper.Set("helper.password", aes256.Encrypt(appCode, cred.password))
+							viper.Set("helper.username", encryptedUser)
+							viper.Set("helper.password", encryptedPass)
 						}
-
 					} else {
 						cred.fallbackUser = strings.Trim(formUser.Text, " ")
 						cred.fallbackPass = strings.Trim(formPass.Text, " ")
+						encryptedUser, err := aes256.Encrypt(appCode, cred.fallbackUser)
+						if err != nil {
+							dialog.NewCustom("Oops", "Close", widget.NewLabel("Credentials not saved. Restart applicatio and try again."), myWindow).Show()
+							return
+						}
+						encryptedPass, err := aes256.Encrypt(appCode, cred.fallbackPass)
+						if err != nil {
+							dialog.NewCustom("Oops", "Close", widget.NewLabel("Credentials not saved. Restart applicatio and try again."), myWindow).Show()
+							return
+						}
 						if appCode != "" {
-							viper.Set("helper.fallbackUser", aes256.Encrypt(appCode, cred.fallbackUser))
-							viper.Set("helper.fallbackPass", aes256.Encrypt(appCode, cred.fallbackPass))
+							viper.Set("helper.fallbackUser", encryptedUser)
+							viper.Set("helper.fallbackPass", encryptedPass)
 						}
 					}
 					viper.WriteConfig()
 					err := viper.WriteConfigAs("helper.yml")
 					if err != nil {
-					log.Fatalf("Error writing config file: %v", err)
+						log.Fatalf("Error writing config file: %v", err)
 					}
 					formPass.Text = ""
 				}

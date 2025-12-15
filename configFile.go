@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"github.com/Rldeckard/aesGenerate256/authGen"
+	"github.com/neteng-tools/aesGenerate256"
 	"github.com/spf13/viper"
 )
 
@@ -35,16 +35,16 @@ func GetCredentialsFromFiles(cred *CRED) bool {
 	}
 
 	if len(viper.GetString("helper.username")) > 0 {
-		cred.username = aes256.Decrypt(appCode, viper.GetString("helper.username"))
+		cred.username, _ = aes256.Decrypt(appCode, viper.GetString("helper.username"))
 	}
 	if len(viper.GetString("helper.password")) > 0 {
-		cred.password = aes256.Decrypt(appCode, viper.GetString("helper.password"))
+		cred.password, _ = aes256.Decrypt(appCode, viper.GetString("helper.password"))
 	}
 	if len(viper.GetString("helper.fallbackUser")) > 0 {
-		cred.fallbackUser = aes256.Decrypt(appCode, viper.GetString("helper.fallbackUser"))
+		cred.fallbackUser, _ = aes256.Decrypt(appCode, viper.GetString("helper.fallbackUser"))
 	}
 	if len(viper.GetString("helper.fallbackPass")) > 0 {
-		cred.fallbackPass = aes256.Decrypt(appCode, viper.GetString("helper.fallbackPass"))
+		cred.fallbackPass, _ = aes256.Decrypt(appCode, viper.GetString("helper.fallbackPass"))
 	}
 	if viper.GetInt("blockTimer.pingCount") > 0 {
 		cred.pingCount = viper.GetInt("blockTimer.pingCount")
