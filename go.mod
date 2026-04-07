@@ -3,8 +3,7 @@ module github.com/Rldeckard/sshRunCMD
 go 1.25.3
 
 require (
-	fyne.io/fyne/v2 v2.7.0
-	github.com/Rldeckard/aesGenerate256 v1.2.0
+	fyne.io/fyne/v2 v2.7.3
 	github.com/cheggaaa/pb/v3 v3.1.7
 	github.com/go-ping/ping v1.2.0
 	github.com/gonutz/w32/v2 v2.12.1
@@ -16,7 +15,7 @@ require (
 )
 
 require (
-	fyne.io/systray v1.11.1-0.20250603113521-ca66a66d8b58 // indirect
+	fyne.io/systray v1.12.0 // indirect
 	github.com/BurntSushi/toml v1.5.0 // indirect
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect
@@ -32,7 +31,7 @@ require (
 	github.com/go-gl/gl v0.0.0-20231021071112-07e5d0ea2e71 // indirect
 	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20250301202403-da16c1255728 // indirect
 	github.com/go-text/render v0.2.0 // indirect
-	github.com/go-text/typesetting v0.3.0 // indirect
+	github.com/go-text/typesetting v0.3.3 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect

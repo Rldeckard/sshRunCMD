@@ -7,13 +7,13 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"time"
 	"sync"
+	"time"
 
 	"github.com/gonutz/w32/v2"
 
-	"github.com/neteng-tools/aesGenerate256"
 	"github.com/Rldeckard/sshRunCMD/dialSSHClient"
+	"github.com/neteng-tools/aesGenerate256"
 	"github.com/spf13/viper"
 	"github.com/zenthangplus/goccm"
 
@@ -56,11 +56,11 @@ func (cred *CRED) guiApp() {
 
 	formUser := widget.NewEntry()
 	formPass := widget.NewPasswordEntry()
-	formDrop := widget.NewSelect([]string{"Active Directory", "Local Account"}, func(value string) {
-		if value == "Active Directory" {
+	formDrop := widget.NewSelect([]string{"First Attempt", "Second Attempt"}, func(value string) {
+		if value == "First Attempt" {
 			formUser.Text = cred.username
 		}
-		if value == "Local Account" {
+		if value == "Second Attempt" {
 			formUser.Text = cred.fallbackUser
 		}
 		formUser.Refresh()
@@ -76,17 +76,17 @@ func (cred *CRED) guiApp() {
 			formUser.Text = cred.username
 			formPopUp := dialog.NewForm("Manage", "Update", "Cancel", loginFormItems, func(ok bool) {
 				if ok {
-					if formDrop.Selected == "Active Directory" {
+					if formDrop.Selected == "First Attempt" {
 						cred.username = strings.Trim(formUser.Text, " ")
 						cred.password = strings.Trim(formPass.Text, " ")
 						encryptedUser, err := aes256.Encrypt(appCode, cred.username)
 						if err != nil {
-							dialog.NewCustom("Oops", "Close", widget.NewLabel("Credentials not saved. Restart applicatio and try again."), myWindow).Show()
+							dialog.NewCustom("Oops", "Close", widget.NewLabel("Credentials not saved. Restart application and try again."), myWindow).Show()
 							return
 						}
 						encryptedPass, err := aes256.Encrypt(appCode, cred.password)
 						if err != nil {
-							dialog.NewCustom("Oops", "Close", widget.NewLabel("Credentials not saved. Restart applicatio and try again."), myWindow).Show()
+							dialog.NewCustom("Oops", "Close", widget.NewLabel("Credentials not saved. Restart application and try again."), myWindow).Show()
 							return
 						}
 						//TODO: Generate appCode and save to file if not present.
@@ -99,12 +99,12 @@ func (cred *CRED) guiApp() {
 						cred.fallbackPass = strings.Trim(formPass.Text, " ")
 						encryptedUser, err := aes256.Encrypt(appCode, cred.fallbackUser)
 						if err != nil {
-							dialog.NewCustom("Oops", "Close", widget.NewLabel("Credentials not saved. Restart applicatio and try again."), myWindow).Show()
+							dialog.NewCustom("Oops", "Close", widget.NewLabel("Credentials not saved. Restart application and try again."), myWindow).Show()
 							return
 						}
 						encryptedPass, err := aes256.Encrypt(appCode, cred.fallbackPass)
 						if err != nil {
-							dialog.NewCustom("Oops", "Close", widget.NewLabel("Credentials not saved. Restart applicatio and try again."), myWindow).Show()
+							dialog.NewCustom("Oops", "Close", widget.NewLabel("Credentials not saved. Restart application and try again."), myWindow).Show()
 							return
 						}
 						if appCode != "" {
@@ -170,7 +170,7 @@ func (cred *CRED) guiApp() {
 		fyne.NewMenuItem("About", func() {
 			dialog.ShowCustom("About", "Close", container.NewVBox(
 				widget.NewLabel("Welcome to sshRunCMD, a simple CLI application for managing switches."),
-				widget.NewLabel("Version: v1.6.1"),
+				widget.NewLabel("Version: v1.6.2"),
 				widget.NewLabel("Author: Ryan Deckard"),
 			), myWindow)
 		}))
@@ -278,7 +278,7 @@ func (cred *CRED) guiApp() {
 	cred.typeDropDown = widget.NewSelect([]string{
 		"Network Devices",
 		"Servers",
-	},func(string){})
+	}, func(string) {})
 	cred.typeDropDown.SetSelectedIndex(0)
 	verifyCredsCheck.SetChecked(true)
 	buttonBox := container.New(
@@ -339,16 +339,16 @@ func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry)
 	progBar.Show()
 	progBar.SetValue(progress.step)
 	if *verifyCreds {
-		if (cred.username == "" || cred.password == "") {
-			if (cred.fallbackPass == "" || cred.fallbackUser == "") {
+		if cred.username == "" || cred.password == "" {
+			if cred.fallbackPass == "" || cred.fallbackUser == "" {
 				dialog.NewCustom("Error", "Close", widget.NewLabel("Credentials not provided. \nPlease update helper.yml or manually add under File > Manage Credentials.\n"), myWindow).Show()
 				return
-			} 
+			}
 		} else {
 			//checks credentials against a default device so you don't lock yourself out. Only done for primary / AD creds. Doesn't check for local creds.
 			config := connect.Init(cred.username, cred.password, "", legacySSH)
 			if cred.core == "" {
-				dialog.NewCustom("Error", "Close", widget.NewLabel("No core device specified in helper file. Please add to Edit > Options."), myWindow).Show()
+				dialog.NewCustom("Error", "Close", widget.NewLabel("No core device specified in helper file to validate creds. Uncheck 'Check Credentials' before running or please add good reference device to Edit > Options."), myWindow).Show()
 				return
 			} else {
 				outputCMD.Text = "\nVerifying credentials\n"
@@ -365,7 +365,7 @@ func (cred *CRED) runProgram(deviceList *widget.Entry, userScript *widget.Entry)
 	}
 	outputCMD.Text = ""
 	userScriptSlice := strings.Split(userScript.Text, "\n")
-	// recent updates in Fyne offloaded GUI Refresh() to its own thread. You can no longer block the main application for any length of time. 
+	// recent updates in Fyne offloaded GUI Refresh() to its own thread. You can no longer block the main application for any length of time.
 	// For the below refresh to work as expected all addtional items below that had to be put into a Go Routine.
 	outputCMD.Text = "\nApplication Started....\n"
 	outputCMD.Refresh()

@@ -34,6 +34,7 @@ func Init(username string, password string, privatekey string, legacySSH bool) s
 	config.Config.SetDefaults()
 	if legacySSH {
 		config.Config.Ciphers = append(config.Config.Ciphers, "aes128-cbc")
+		config.Config.Ciphers = append(config.Config.Ciphers, "3des-cbc")
 		config.Config.KeyExchanges = append(config.Config.KeyExchanges, "diffie-hellman-group1-sha1")
 	}
 	// A public key may be used to authenticate against the remote
