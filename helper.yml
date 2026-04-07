@@ -2,8 +2,8 @@ blocktimer:
     pingcount: 3
     pingtimeout: 500
 helper:
-    core: 10.1.1.151
-    key: hsa5Dj6eCQmg7By/tAFw7pGHPdoR8g==
-    password: 5588388f6e03c542f2d75c05c4dff787ce780dc64c138fd464e46526bb8ee6f0ccaed9685a70eeb858a6
+    core: 
+    key: 
+    password: 
     threads: 30
-    username: 97707e9a4acce1b5cb40c4f74162463b63c9eda46f5f7025b9f2181f76b75ec7952c720115a6a1
+    username: 
