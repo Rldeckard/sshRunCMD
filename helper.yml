@@ -1,9 +1,0 @@
-blocktimer:
-    pingcount: 3
-    pingtimeout: 500
-helper:
-    core: 
-    key: 
-    password: 
-    threads: 30
-    username: 
